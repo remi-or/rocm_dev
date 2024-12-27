@@ -1,0 +1,4 @@
+before_big_refacto/
+*.out
+*.png
+**.pyc
