@@ -13,14 +13,15 @@ if __name__ == "__main__":
     parser.add_argument("--project", "-p", required=True)
     parser.add_argument("--message", "-m", default="")
     parser.add_argument("--arguments", "-a", default="")
+    parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
     project = Project(str(args.project))
     message = str(args.message)
     arguments = str(args.arguments)
+    verbose = bool(args.verbose)
 
     # Compile and run test
     test_output = project.compile_and_run("test.cu", arguments)
-    print(f"{test_output = }")
     
     # Compile and run benchmark
     time_string = project.compile_and_run("bench.cu", arguments)
@@ -41,6 +42,8 @@ if __name__ == "__main__":
         "time_string": "", # str(time_string),
         "test_output": test_output,
     }
+    if verbose:
+        print(json.dumps(data, indent=4))
 
     # Backup the project
     hash_ = project.backup()

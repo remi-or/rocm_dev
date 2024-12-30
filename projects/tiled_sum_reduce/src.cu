@@ -17,8 +17,8 @@ void __global__ _tiled_sum_reduce_kernel(
     const int n
 ) {
     // Relocate current thread
-    const int curr_m = (blockIdx.x * WARPTILE_M) + (threadIdx.x % THREADS_PER_ROW);
-    const int curr_n = (blockIdx.y * WARPTILE_M) + (threadIdx.x / THREADS_PER_ROW) * THREADS_PER_ROW;
+    const int curr_m = (blockIdx.x * WARPTILE_M) + (threadIdx.x / THREADS_PER_ROW);
+    const int curr_n = (blockIdx.y * WARPTILE_M) + (threadIdx.x % THREADS_PER_ROW) * ELEMS_PER_THREADS;
     A += curr_m * n + curr_n;
     B += curr_m * n + curr_n;
     D += curr_m * n + curr_n;
