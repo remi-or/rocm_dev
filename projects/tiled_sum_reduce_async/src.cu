@@ -5,9 +5,9 @@
 #define WARPTILE_M 8
 #define WARPTILE_N 64
 
-#define PT 6
-#define CT 2
-#define QSIZE 12
+#define PT 4
+#define CT 1
+#define QSIZE 8
 #define PRODUCED_MASK 257
 #define FINISHED_MASK ((1 << (2 + CT)) - 1)
 
@@ -85,11 +85,14 @@ void inline __device__ _tsr_consumer(
         }
         // Mark buffer as consumed
         if (thread_id == 0) {
-            old_q = atomicInc(&queue[curr_b % QSIZE], warp_mask);
-            if (old_q == CT - 1) {
+            if (CT == 1) {
                 queue[curr_b % QSIZE] = 0;
+            } else {
+                old_q = atomicInc(&queue[curr_b % QSIZE], warp_mask);
+                if (old_q == CT - 1) {
+                    queue[curr_b % QSIZE] = 0;
+                }
             }
-            // atomicCAS(&queue[curr_b % QSIZE], FINISHED_MASK, 0);
         }
     }
 
