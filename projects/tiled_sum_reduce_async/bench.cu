@@ -8,6 +8,7 @@ int main(int argc, char **argv) {
     const int iterations = 2500;
     const int warmups = 200;
 
+    assert(argc==4);
     const int b = atoi(argv[1]);
     const int m = atoi(argv[2]);
     const int n = atoi(argv[3]);

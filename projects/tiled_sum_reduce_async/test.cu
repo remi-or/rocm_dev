@@ -28,6 +28,7 @@ void host_tiled_sum_reduce(
 int main(int argc, char **argv) {
     HIP_CHECK( hipSetDevice(0) );
 
+    assert(argc==4);
     const int b = atoi(argv[1]);
     const int m = atoi(argv[2]);
     const int n = atoi(argv[3]);

@@ -45,8 +45,9 @@ class Project:
 
     def compile_and_run(self, c_file: str, arguments: str = "") -> str:
         file_path = osp.join(self.project_dir, c_file)
-        subprocess.check_call(f"hipcc -O3 {file_path} -o a.out".split())
-        return str(subprocess.check_output(f"./a.out {arguments}".split()))[2:-1]
+        name = c_file.split(".")[0]
+        subprocess.check_call(f"hipcc -O3 {file_path} -o {name}.out".split())
+        return str(subprocess.check_output(f"./{name}.out {arguments}".split()))[2:-1]
     
     def backup(self) -> str:
         """Backups the current project and returns the hash of the backup."""
