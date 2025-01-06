@@ -15,6 +15,3 @@
 
 #define ELEMS_PER_THREADS ((WARPTILE_M * WARPTILE_N) / WARPSIZE)
 #define THREADS_PER_ROW (WARPTILE_N / ELEMS_PER_THREADS)
-
-using uint8 = unsigned char;
-using uint16 = unsigned short;

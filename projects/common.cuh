@@ -7,6 +7,8 @@
 
 // Datatypes
 using fp8 = __hip_fp8_storage_t;
+using uint8 = unsigned char;
+using uint16 = unsigned short;
 
 
 // "CHECK" macros
