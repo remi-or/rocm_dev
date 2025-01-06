@@ -6,93 +6,90 @@ void __global__ _tsr_kernel(
     const float* __restrict__ A, 
     const float* __restrict__ B,
     float* __restrict__ D, 
-    const int b,
     const int m,
-    const int n
+    const int n,
+    const int k
 ) {
     // Initialize shared queue
-    __shared__ unsigned int queue[QSIZE];
+    __shared__ uint8 queue[QSIZE];
     if (threadIdx.x == 0) {
         #pragma unroll
-        for (int q = 0; q < QSIZE; q++) {
+        for (int q = 0; q < 2 * QSIZE; q++) {
             queue[q] = 0;
         }
     }
     // Declare shared buffer
-    __shared__ float A_buffer[WARPTILE_M * WARPTILE_N * QSIZE];
-    __shared__ float B_buffer[WARPTILE_M * WARPTILE_N * QSIZE];
-    __shared__ float D_buffer[(CONSUMERS == 1) ? 1 : (CONSUMERS * WARPTILE_M * WARPTILE_N)];
+    __shared__ float A_buffer[WARPTILE_M * WARPTILE_K * QSIZE];
+    __shared__ float B_buffer[WARPTILE_K * WARPTILE_N * QSIZE];
+    __shared__ float D_buffer[(CONSUMERS == 1) ? 0 : (CONSUMERS * WARPTILE_M * WARPTILE_N)];
     __syncthreads();
 
-    // Determine warp specialization
+    // Infer warp specialization
     const int warp_id = threadIdx.x / WARPSIZE;
-    const int thread_id = threadIdx.x % WARPSIZE;
-    // Determine thread position
-    int curr_m = (blockIdx.x * WARPTILE_M) + (thread_id / THREADS_PER_ROW);
-    int curr_n = (blockIdx.y * WARPTILE_M) + (thread_id % THREADS_PER_ROW) * ELEMS_PER_THREADS;
 
-    // Producer path
+    // Producer warp
     if (warp_id < (2 * PRODUCERS)) {
-        const float* __restrict__ src = (warp_id % 2 == 0) ? A : B;
-        float* buffer = (warp_id % 2 == 0) ? &A_buffer[0] : &B_buffer[0];
-        uint8* q = reinterpret_cast<uint8*>(&queue[0]) + (warp_id % 2);
 
-        _tsr_producer(
-            src + (curr_m * n + curr_n) + (warp_id / 2) * m * n,
-            buffer + (curr_m * WARPTILE_N + curr_n),
-            q,
-            warp_id, thread_id,
-            b, m, n
-        );
-    }
-
-    // Consumers path
-    else {
-        float* out = (CONSUMERS == 1) ? D : &D_buffer[0];
-        _tsr_consumer(
-            &A_buffer[0] + (curr_m * WARPTILE_N + curr_n),
-            &B_buffer[0] + (curr_m * WARPTILE_N + curr_n),
-            out + (curr_m * WARPTILE_N + curr_n) * CONSUMERS,
-            &queue[0],
-            warp_id,
-            thread_id,
-            b
-        );
-    }
-    __syncthreads();
-
-    // Final reduce and store
-    float results_reg[ELEMS_PER_THREADS];
-    if ((CONSUMERS > 1) && (warp_id == 0)) {
-        
-        #pragma unroll
-        for (int i = 0; i < ELEMS_PER_THREADS; i++) {
-            results_reg[i] = 0.0f;
-
-            #pragma unroll 
-            for (int j = 0; j < CONSUMERS; j++) {
-                results_reg[i] += D_buffer[(curr_m * WARPTILE_N + curr_n + i) * CONSUMERS + j];
-            }
+        // A producer
+        if (warp_id % 2 == 0) {
+            _tsr_producer<true>(A, &A_buffer[0], &queue[0], k);
+        } 
+        // B producer
+        else {
+            _tsr_producer<false>(B, &B_buffer[0], &queue[1], k);
         }
+        
+    }
+    // Consumers warp
+    else {
+        uint16* q = reinterpret_cast<uint16*>(&queue[0]);
+        _tsr_consumer(&A_buffer[0], &B_buffer[0], &D_buffer[0], D, q, n, k);
+    }
 
-        D += curr_m * n + curr_n;
-        for (int i = 0; i < ELEMS_PER_THREADS; i++) {
-            D[i] = results_reg[i];
+    // If there is more than one consumer, we need to transfer the result from smem to gmem
+    static constexpr int output_elems_per_thread = (WARPTILE_M * WARPTILE_N) / WARPSIZE;
+
+    if (CONSUMERS > 1) {
+        __syncthreads();
+        if (warp_id == 0) {
+
+            // Declare output registers
+            float* d = &D_buffer[0] + threadIdx.x * output_elems_per_thread * CONSUMERS;
+            float reg_D[output_elems_per_thread];
+
+            // Loop through each output elements
+            for (int i = 0; i < output_elems_per_thread; i++) {
+
+                // Reduce across consumers
+                reg_D[i] = 0.0f;
+                #pragma unroll 
+                for (int j = 0; j < CONSUMERS; j++) {
+                    reg_D[i] += d[j];
+                }
+                d += CONSUMERS;
+            }
+
+            // Store back in gmem
+            D += threadIdx.x * output_elems_per_thread;
+            for (int i = 0; i < output_elems_per_thread; i++) {
+                D[i] = reg_D[i];
+            }
         }
     }
 }
 
-void tiled_sum_reduce(
+void async_gemm(
     const float* __restrict__ A, 
     const float* __restrict__ B,
     float* __restrict__ D, 
-    const int b, 
     const int m, 
-    const int n
+    const int n, 
+    const int k
 ) {
     // Check shapes
-    if ((m % WARPTILE_M != 0) || (n % WARPTILE_N != 0)) {
-        std::cerr << "Either m or n is not divisible by the corresponding WARPTILE_" << std::endl;
+    if ((m % WARPTILE_M != 0) || (n % WARPTILE_N != 0) || (k % WARPTILE_K != 0)) {
+        std::cerr << "Either m, n or k is not divisible by the corresponding WARPTILE_" << std::endl;
+        exit(1);
     }
 
     // Prepare kernel launch
@@ -102,5 +99,5 @@ void tiled_sum_reduce(
     dim3 block((2 * PRODUCERS + CONSUMERS) * WARPSIZE, 1, 1);
 
     // Launch kernel
-    _tsr_kernel<<<grid, block, 0, 0>>>(A, B, D, b, m, n);
+    _tsr_kernel<<<grid, block, 0, 0>>>(A, B, D, m, n, k);
 }

@@ -9,14 +9,14 @@ int main(int argc, char **argv) {
     const int warmups = 200;
 
     assert(argc==4);
-    const int b = atoi(argv[1]);
-    const int m = atoi(argv[2]);
-    const int n = atoi(argv[3]);
+    const int m = atoi(argv[1]);
+    const int n = atoi(argv[2]);
+    const int k = atoi(argv[3]);
 
     // Tensors
     float *hA, *dA, *hB, *dB, *D;
-    random_host_tensor<float>(hA, b * m * n);
-    random_host_tensor<float>(hB, b * m * n);
+    random_host_tensor<float>(hA, m * k);
+    random_host_tensor<float>(hB, k * n);
     // Events 
     hipEvent_t start, stop;
     HIP_CHECK(hipEventCreate(&start));
@@ -29,8 +29,8 @@ int main(int argc, char **argv) {
     for (int iter = 0; iter < (iterations + warmups); iter++) {
 
         // Create tensors
-        tensor_h2d<float>(hA, dA, b * m * n);
-        tensor_h2d<float>(hB, dB, b * m * n);
+        tensor_h2d<float>(hA, dA, m * k);
+        tensor_h2d<float>(hB, dB, k * n);
         empty_device_tensor<float>(D, m * n);
         // Flush cache 
         flush_device_cache();
@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
 
         // Call and time kernel
         HIP_CHECK(hipEventRecord(start));
-        tiled_sum_reduce(dA, dB, D, b, m, n);
+        async_gemm(dA, dB, D, m, n, k);
         HIP_CHECK(hipEventRecord(stop));
         HIP_CHECK(hipEventSynchronize(stop));
         HIP_CHECK(hipEventElapsedTime(&t, start, stop));

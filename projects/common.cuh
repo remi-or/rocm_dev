@@ -47,17 +47,22 @@ void tensor_d2h(const T* device_tensor, T* &host_tensor, size_t size) {
 // Data generation
 
 template<typename T> 
-void zero_host_tensor(T* &x, size_t size) {
+void full_host_tensor(T* &x, size_t size, T elem) {
     x = (T*) malloc(size * sizeof(T));
     for (size_t i = 0; i < size; i++) {
-        x[i] = (T) 0;
+        x[i] = elem;
     }
+}
+
+template<typename T> 
+void zero_host_tensor(T* &x, size_t size) {
+    full_host_tensor<T>(x, size, 0);
 }
 
 template <typename T>
 void zero_device_tensor(T* &device_tensor, size_t size) {
     T* host_tensor;
-    zero_host_tensor<T>(host_tensor, size);
+    full_host_tensor<T>(host_tensor, size, 0);
     tensor_h2d<T>(host_tensor, device_tensor, size);
     free(host_tensor);
 }
