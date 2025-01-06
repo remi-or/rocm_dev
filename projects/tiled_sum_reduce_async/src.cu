@@ -3,13 +3,12 @@
 
 #define WARPSIZE 64
 #define WARPTILE_M 8
-#define WARPTILE_N 64
+#define WARPTILE_N 32
 
-#define PT 4
-#define CT 1
-#define QSIZE 8
+#define PT 6
+#define CT 3
+#define QSIZE 12
 #define PRODUCED_MASK 257
-#define FINISHED_MASK ((1 << (2 + CT)) - 1)
 
 #define ELEMS_PER_THREADS ((WARPTILE_M * WARPTILE_N) / WARPSIZE)
 #define THREADS_PER_ROW (WARPTILE_N / ELEMS_PER_THREADS)
@@ -85,14 +84,7 @@ void inline __device__ _tsr_consumer(
         }
         // Mark buffer as consumed
         if (thread_id == 0) {
-            if (CT == 1) {
-                queue[curr_b % QSIZE] = 0;
-            } else {
-                old_q = atomicInc(&queue[curr_b % QSIZE], warp_mask);
-                if (old_q == CT - 1) {
-                    queue[curr_b % QSIZE] = 0;
-                }
-            }
+            queue[curr_b % QSIZE] = 0;
         }
     }
 
@@ -123,9 +115,8 @@ void __global__ _tsr_kernel(
     // Declare shared buffer
     __shared__ float A_buffer[WARPTILE_M * WARPTILE_N * QSIZE];
     __shared__ float B_buffer[WARPTILE_M * WARPTILE_N * QSIZE];
-    __shared__ float D_buffer[CT * WARPTILE_M * WARPTILE_N];
+    __shared__ float D_buffer[(CT == 1) ? 1 : (CT * WARPTILE_M * WARPTILE_N)];
     __syncthreads();
-    int warp_offset;
 
     // Determine warp specialization
     const int warp_id = threadIdx.x / WARPSIZE;
@@ -151,10 +142,11 @@ void __global__ _tsr_kernel(
 
     // Consumers path
     else {
+        float* out = (CT == 1) ? D : &D_buffer[0];
         _tsr_consumer(
             &A_buffer[0] + (curr_m * WARPTILE_N + curr_n),
             &B_buffer[0] + (curr_m * WARPTILE_N + curr_n),
-            &D_buffer[0] + (curr_m * WARPTILE_N + curr_n) * CT,
+            out + (curr_m * WARPTILE_N + curr_n) * CT,
             &queue[0],
             warp_id,
             thread_id,
@@ -165,7 +157,7 @@ void __global__ _tsr_kernel(
 
     // Final reduce and store
     float results_reg[ELEMS_PER_THREADS];
-    if (warp_id == 0) {
+    if ((CT > 1) && (warp_id == 0)) {
         
         #pragma unroll
         for (int i = 0; i < ELEMS_PER_THREADS; i++) {
