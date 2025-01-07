@@ -1,93 +1,107 @@
 #include "./core.cu"
 
-void inline __device__ consume(
-    float* A_buffer,
-    float* B_buffer,
-    float* reg_D,
-    const int curr_m,
-    const int curr_n,
-    int elems_per_thread,
-    int threads_per_row
-) {
-    // Relocate thread
-    float* a = A_buffer + curr_m * WARPTILE_K;
-    float* b;
-
-    for (int i = 0; i < elems_per_thread; i++) {
-        b = B_buffer + (curr_n + i) * WARPTILE_K;
-
-        #pragma unroll
-        for (int j = 0; j < WARPTILE_K; j++) {
-            reg_D[i] += a[j] * b[j];
-        }
+void inline __device__ consumer_smem_to_reg(fp8* &buffer, fp8x8 &reg) 
+{
+    // 32 bits load from the current bank
+    #pragma unroll
+    for (int i = 0; i < 4; i++) {
+        reg[i] = buffer[i];
+    }
+    // 32 bits load from the same bank, hopefully extension of the first load
+    #pragma unroll
+    for (int i = 0; i < 4; i++) {
+        reg[4 + i] = buffer[i + 4 * 32];
     }
 }
 
 void __device__ _tsr_consumer(
-    float* A_buffer,
-    float* B_buffer,
+    fp8* A_buffer,
+    fp8* B_buffer,
     float* D_buffer,
     float* D,
     uint16* queue,
     const int n,
     const int k
 ) {
-    static constexpr int elems_per_thread = (WARPTILE_M * WARPTILE_N) / WARPSIZE;
-    static constexpr int threads_per_row = WARPTILE_N / elems_per_thread;
+    // Compile-time constants
+    static constexpr int in_per_thread = (OP_MN * OP_K) / WARPSIZE;
+    // Right now, this is hard coded to 4 for type issues # TODO: change back using asm instead of the builtin
+    // static constexpr int out_per_thread = (WARPTILE_M * WARPTILE_N) / WARPSIZE;
 
     // Compute thread position
     const int thread_id = threadIdx.x % WARPSIZE;
-    const int curr_m = thread_id / threads_per_row;
-    const int curr_n = (thread_id % threads_per_row) * elems_per_thread;
+    A_buffer += (thread_id % 32) * 4 + (thread_id / 32) * 256;
+    B_buffer += (thread_id % 32) * 4 + (thread_id / 32) * 256;
 
-    // Initialize accumultion registers
-    float reg_D[elems_per_thread];
+    // Declare input registers
+    fp8x8 reg_A;
+    fp8x8 reg_B;
+
+    // Initialize output registers
+    f32x4 reg_D;
     #pragma unroll
-    for (int i = 0; i < elems_per_thread; i++) {
+    for (int i = 0; i < 4; i++) {
         reg_D[i] = 0.0f;
     }
 
     // K-wise loop
     int index;
+    fp8 *A_offs_buff, *B_offs_buff;
     const int consumer_id = (threadIdx.x / WARPSIZE) - (2 * PRODUCERS);
     const int k_blocks = k / WARPTILE_K;
 
     for (int b = consumer_id; b < k_blocks; b += CONSUMERS) {
         index = b % QSIZE;
+        A_offs_buff = A_buffer + index * (WARPTILE_M * WARPTILE_K);
+        B_offs_buff = B_buffer + index * (WARPTILE_N * WARPTILE_K);
 
         // Wait for buffer to be filled
         while (queue[index] != PRODUCED_MASK) {
             asm volatile("s_sleep 0");
         }
-        // Consume 
-        consume(
-            A_buffer + index * (WARPTILE_M * WARPTILE_K),
-            B_buffer + index * (WARPTILE_N * WARPTILE_K),
-            reg_D,
-            curr_m, 
-            curr_n,
-            elems_per_thread,
-            threads_per_row
-        );
+
+        // Consume
+        #pragma unroll
+        for (int op = 0; op < OP_PER_WARPTILE; op++) {
+
+            consumer_smem_to_reg(A_offs_buff, reg_A);
+            consumer_smem_to_reg(B_offs_buff, reg_B);
+            reg_D = __builtin_amdgcn_mfma_f32_16x16x32_fp8_fp8(
+                reinterpret_cast<long>(reg_A),
+                reinterpret_cast<long>(reg_B),
+                reg_D, 0, 0, 0 // cbsz , abid, blgp
+            );
+
+            // Advance
+            A_offs_buff += OP_MN * OP_K;
+            B_offs_buff += OP_MN * OP_K;
+        }
 
         // Mark buffer as consumed
-        if (thread_id == 0) {
-            queue[index] = 0;
-        }
+        queue[index] = 0;
     }
 
-    // If there is only one consumer, store directly in gmem
+    // Prepare store
+    int stride;
     float* out;
+    int out_m = (thread_id / 16) * 4;
+    int out_n = (thread_id % 16);
+
+    // If there is only one consumer, store directly in gmem
     if (CONSUMERS == 1) {
-        out = D + (blockIdx.x * WARPTILE_M + curr_m) * n + (blockIdx.y * WARPTILE_N + curr_n); }
+        out = D + (blockIdx.x * WARPTILE_M + out_m) * n + (blockIdx.y * WARPTILE_N + out_n);
+        stride = n;
+    }
     // Otherwise, store in a shared memory buffer
     else {
-        out = D_buffer + ((curr_m * WARPTILE_M) + curr_n) * CONSUMERS + consumer_id;
+        out = D_buffer + ((out_m * WARPTILE_N) + out_n) * CONSUMERS + consumer_id;
+        stride = WARPTILE_N * CONSUMERS;
     }
 
     // Store
     #pragma unroll
-    for (int i = 0; i < elems_per_thread; i++) {
-        out[i * CONSUMERS] = reg_D[i];
+    for (int i = 0; i < 4; i++) {
+        out[0] = reg_D[i];
+        out += stride;
     }
 }

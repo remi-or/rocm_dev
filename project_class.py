@@ -46,7 +46,13 @@ class Project:
     def compile_and_run(self, c_file: str, arguments: str = "") -> str:
         file_path = osp.join(self.project_dir, c_file)
         name = c_file.split(".")[0]
-        subprocess.check_call(f"hipcc -O3 {file_path} -o {name}.out".split())
+        current_files = os.listdir(".")
+        subprocess.check_call(f"hipcc -O3 {file_path} -save-temps -o {name}.out".split())
+        new_files = [file for file in os.listdir(".") if (file not in current_files and file[:-3] != "out")]
+        shutil.rmtree("./build")
+        os.mkdir("./build")
+        for file in new_files:
+            shutil.move(file, f"./build/{file}")
         return str(subprocess.check_output(f"./{name}.out {arguments}".split()))[2:-1]
     
     def backup(self) -> str:

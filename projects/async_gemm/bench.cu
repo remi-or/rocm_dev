@@ -14,9 +14,10 @@ int main(int argc, char **argv) {
     const int k = atoi(argv[3]);
 
     // Tensors
-    float *hA, *dA, *hB, *dB, *D;
-    random_host_tensor<float>(hA, m * k);
-    random_host_tensor<float>(hB, k * n);
+    fp8 *hA; fp8* dA, *hB, *dB;
+    random_host_tensor<fp8>(hA, m * k);
+    random_host_tensor<fp8>(hB, k * n);
+    float *D;
     // Events 
     hipEvent_t start, stop;
     HIP_CHECK(hipEventCreate(&start));
@@ -29,8 +30,8 @@ int main(int argc, char **argv) {
     for (int iter = 0; iter < (iterations + warmups); iter++) {
 
         // Create tensors
-        tensor_h2d<float>(hA, dA, m * k);
-        tensor_h2d<float>(hB, dB, k * n);
+        tensor_h2d<fp8>(hA, dA, m * k);
+        tensor_h2d<fp8>(hB, dB, k * n);
         empty_device_tensor<float>(D, m * n);
         // Flush cache 
         flush_device_cache();

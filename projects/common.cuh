@@ -7,6 +7,10 @@
 
 // Datatypes
 using fp8 = __hip_fp8_storage_t;
+
+using fp8x8 = __attribute__( (__vector_size__(8 * sizeof(fp8)) )) fp8;
+using f32x4 = __attribute__( (__vector_size__(4 * sizeof(float)) )) float;
+
 using uint8 = unsigned char;
 using uint16 = unsigned short;
 
@@ -78,6 +82,15 @@ void random_host_tensor(float* &x, size_t size) {
     x = (float*) malloc(size * sizeof(float));
     for (size_t i = 0; i < size; i++) {
         x[i] = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+    }
+}
+template<>
+void random_host_tensor(fp8* &x, size_t size) {
+    x = (fp8*) malloc(size * sizeof(fp8));
+    float y;
+    for (size_t i = 0; i < size; i++) {
+        y = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        x[i] = __hip_cvt_float_to_fp8(y, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
     }
 }
 

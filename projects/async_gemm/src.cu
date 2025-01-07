@@ -3,15 +3,15 @@
 
 
 void __global__ _tsr_kernel(
-    const float* __restrict__ A, 
-    const float* __restrict__ B,
+    const fp8* __restrict__ A, 
+    const fp8* __restrict__ B,
     float* __restrict__ D, 
     const int m,
     const int n,
     const int k
 ) {
     // Initialize shared queue
-    __shared__ uint8 queue[QSIZE];
+    __shared__ uint8 queue[2 * QSIZE]; // 00 00 00 00 00 00 = 0 / 257
     if (threadIdx.x == 0) {
         #pragma unroll
         for (int q = 0; q < 2 * QSIZE; q++) {
@@ -19,8 +19,8 @@ void __global__ _tsr_kernel(
         }
     }
     // Declare shared buffer
-    __shared__ float A_buffer[WARPTILE_M * WARPTILE_K * QSIZE];
-    __shared__ float B_buffer[WARPTILE_K * WARPTILE_N * QSIZE];
+    __shared__ fp8 A_buffer[WARPTILE_M * WARPTILE_K * QSIZE];
+    __shared__ fp8 B_buffer[WARPTILE_K * WARPTILE_N * QSIZE];
     __shared__ float D_buffer[(CONSUMERS == 1) ? 0 : (CONSUMERS * WARPTILE_M * WARPTILE_N)];
     __syncthreads();
 
@@ -61,9 +61,9 @@ void __global__ _tsr_kernel(
             for (int i = 0; i < output_elems_per_thread; i++) {
 
                 // Reduce across consumers
-                reg_D[i] = 0.0f;
+                reg_D[i] = d[0];
                 #pragma unroll 
-                for (int j = 0; j < CONSUMERS; j++) {
+                for (int j = 1; j < CONSUMERS; j++) {
                     reg_D[i] += d[j];
                 }
                 d += CONSUMERS;
@@ -79,8 +79,8 @@ void __global__ _tsr_kernel(
 }
 
 void async_gemm(
-    const float* __restrict__ A, 
-    const float* __restrict__ B,
+    const fp8* __restrict__ A, 
+    const fp8* __restrict__ B,
     float* __restrict__ D, 
     const int m, 
     const int n, 
@@ -89,6 +89,10 @@ void async_gemm(
     // Check shapes
     if ((m % WARPTILE_M != 0) || (n % WARPTILE_N != 0) || (k % WARPTILE_K != 0)) {
         std::cerr << "Either m, n or k is not divisible by the corresponding WARPTILE_" << std::endl;
+        exit(1);
+    }
+    if (OP_PER_WARPTILE != 1 && OP_PER_WARPTILE != 2) {
+        std::cerr << "OP_PER_WARPTILE must be 1 or 2" << std::endl;
         exit(1);
     }
 

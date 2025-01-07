@@ -4,3 +4,4 @@ before_big_refacto/
 **.pyc
 backups/
 data/
+build/
