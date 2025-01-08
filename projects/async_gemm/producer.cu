@@ -53,7 +53,7 @@ void __device__ _tsr_producer(
         for (int i = 0; i < elems_per_thread; i++) {
             reg[i] = src[i];
         }
-        // Store in smem from reg
+        // Store in smem from reg // TODO: try with GMEM -> SMEM directly or with cache miss then hit
         buf[0] = reg[0];
         buf[1] = reg[1];
         buf[2] = reg[2];

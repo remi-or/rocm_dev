@@ -48,6 +48,7 @@ void __global__ _tsr_kernel(
 
     // If there is more than one consumer, we need to transfer the result from smem to gmem
     static constexpr int output_elems_per_thread = (WARPTILE_M * WARPTILE_N) / WARPSIZE;
+    static constexpr int threads_per_row = WARPTILE_N / output_elems_per_thread;
 
     if (CONSUMERS > 1) {
         __syncthreads();
@@ -70,7 +71,8 @@ void __global__ _tsr_kernel(
             }
 
             // Store back in gmem
-            D += threadIdx.x * output_elems_per_thread;
+            D += (blockIdx.x * WARPTILE_M * n) + (blockIdx.y * WARPTILE_N);
+            D += (threadIdx.x / threads_per_row) * n + (threadIdx.x % threads_per_row) * output_elems_per_thread; 
             for (int i = 0; i < output_elems_per_thread; i++) {
                 D[i] = reg_D[i];
             }

@@ -15,7 +15,7 @@
 
 #define PRODUCERS 7
 #define CONSUMERS 2
-#define QSIZE 21
+#define QSIZE 28
 #define PRODUCED_MASK 257
 
 #define ELEMS_PER_THREADS ((WARPTILE_M * WARPTILE_N) / WARPSIZE)
