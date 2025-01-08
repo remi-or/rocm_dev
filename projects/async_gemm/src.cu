@@ -1,11 +1,11 @@
 #include "./consumer.cu"
 #include "./producer.cu"
 
-
+template <typename out_dtype>
 void __global__ _tsr_kernel(
     const fp8* __restrict__ A, 
     const fp8* __restrict__ B,
-    float* __restrict__ D, 
+    out_dtype* __restrict__ D, 
     const int m,
     const int n,
     const int k
@@ -74,16 +74,17 @@ void __global__ _tsr_kernel(
             D += (blockIdx.x * WARPTILE_M * n) + (blockIdx.y * WARPTILE_N);
             D += (threadIdx.x / threads_per_row) * n + (threadIdx.x % threads_per_row) * output_elems_per_thread; 
             for (int i = 0; i < output_elems_per_thread; i++) {
-                D[i] = reg_D[i];
+                D[i] = (out_dtype) reg_D[i];
             }
         }
     }
 }
 
+template <typename out_dtype>
 void async_gemm(
     const fp8* __restrict__ A, 
     const fp8* __restrict__ B,
-    float* __restrict__ D, 
+    out_dtype* __restrict__ D, 
     const int m, 
     const int n, 
     const int k
