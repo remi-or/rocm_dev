@@ -76,3 +76,43 @@ void async_gemm(
     // Launch kernel
     _tsr_kernel<<<grid, block, 0, 0>>>(A, B, D, m, n, k);
 }
+
+
+
+
+// void sparse_k(
+//     torch::Tensor& A,
+//     torch::Tensor& B,
+//     torch::Tensor& D,
+//     int64_t W
+// ) {
+//     const int m = A.size(0);
+//     const int n = B.size(1);
+//     const int k = A.size(1);
+    
+//     const fp8* __restrict__ A_ = (const fp8* __restrict__) A.data_ptr(); 
+//     const fp8* __restrict__ B_ = (const fp8* __restrict__) B.data_ptr(); 
+//     float* __restrict__ D_ = (float* __restrict__) D.data_ptr(); 
+
+//     // Check shapes
+//     if ((m % WARPTILE_M != 0) || (n % WARPTILE_N != 0) || (k % WARPTILE_K != 0)) {
+//         std::cerr << "Either m, n or k is not divisible by the corresponding WARPTILE_" << std::endl;
+//         exit(1);
+//     }
+//     if (OP_PER_WARPTILE != 1 && OP_PER_WARPTILE != 2) {
+//         std::cerr << "OP_PER_WARPTILE must be 1 or 2" << std::endl;
+//         exit(1);
+//     }
+
+//     // Prepare kernel launch
+//     uint32_t grid_m = (m / WARPTILE_M);
+//     uint32_t grid_n = (n / WARPTILE_N);
+//     dim3 grid(grid_m, grid_n, 1);
+//     dim3 block((2 * PRODUCERS + CONSUMERS) * WARPSIZE, 1, 1);
+
+//     const at::cuda::OptionalCUDAGuard device_guard(device_of(A));
+//     const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+
+//     // Launch kernel
+//     _tsr_kernel<float><<<grid, block, 0, stream>>>(A_, B_, D_, m, n, k);
+// }

@@ -3,6 +3,16 @@
 #include <hip/hip_runtime.h>
 #include <iostream>
 
+// #include <ATen/cuda/CUDAContext.h>
+// #include <c10/cuda/CUDAGuard.h>
+// #include <hip/hip_fp8.h>
+// #include <torch/all.h>
+// using fp8 = __hip_fp8_storage_t;
+// using fp8x8 = __attribute__( (__vector_size__(8 * sizeof(fp8)) )) fp8;
+// using f32x4 = __attribute__( (__vector_size__(4 * sizeof(float)) )) float;
+// using uint8 = unsigned char;
+// using uint16 = unsigned short;
+
 #define WARPSIZE 64
 
 #define OP_PER_WARPTILE 2
