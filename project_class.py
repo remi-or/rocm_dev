@@ -26,6 +26,12 @@ def get_hash(file_path: str) -> str:
     m.update(data)
     return m.hexdigest()
 
+def temp_extension(file: str) -> bool:
+    for ext in [".bc", ".hipi", ".hipfb", ".o", ".s", ".out", "out.resolution.txt"]:
+        if file.endswith(ext):
+            return True
+    return False
+
 
 class Project:
 
@@ -46,14 +52,13 @@ class Project:
     def compile_and_run(self, c_file: str, arguments: str = "") -> str:
         file_path = osp.join(self.project_dir, c_file)
         name = c_file.split(".")[0]
-        current_files = os.listdir(".")
         subprocess.check_call(f"hipcc -O3 {file_path} -save-temps -o {name}.out".split())
-        new_files = [file for file in os.listdir(".") if (file not in current_files and file[:-3] != "out")]
+        new_files = list(filter(temp_extension, os.listdir(".")))
         shutil.rmtree("./build")
         os.mkdir("./build")
         for file in new_files:
             shutil.move(file, f"./build/{file}")
-        return str(subprocess.check_output(f"./{name}.out {arguments}".split()))[2:-1]
+        return str(subprocess.check_output(f"./build/{name}.out {arguments}".split()))[2:-1]
     
     def backup(self) -> str:
         """Backups the current project and returns the hash of the backup."""

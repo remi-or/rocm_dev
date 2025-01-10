@@ -91,7 +91,8 @@ void async_gemm(
 ) {
     // Check shapes
     if ((m % WARPTILE_M != 0) || (n % WARPTILE_N != 0) || (k % WARPTILE_K != 0)) {
-        std::cerr << "Either m, n or k is not divisible by the corresponding WARPTILE_" << std::endl;
+        std::cerr << "Either m, n or k is not divisible by the corresponding WARPTILE_ :";
+        std::cerr << m << ", " << n << ", " << k << std::endl;
         exit(1);
     }
     if (OP_PER_WARPTILE != 1 && OP_PER_WARPTILE != 2) {

@@ -43,16 +43,17 @@ void __device__ _tsr_producer(
         index = b % QSIZE;
         buf = buffer + index * (WARPTILE_MN * WARPTILE_K);
 
-        // Wait for buffer to be consumed
-        while (queue[2 * index] == 1) {
-            asm volatile("s_sleep 0"); // TODO: try with 1
-        }
-
         // Load from gmem to reg
         #pragma unroll
         for (int i = 0; i < elems_per_thread; i++) {
             reg[i] = src[i];
         }
+
+        // Wait for buffer to be consumed
+        while (queue[2 * index] == 1) {
+            asm volatile("s_sleep 0"); // TODO: try with 1
+        }
+
         // Store in smem from reg // TODO: try with GMEM -> SMEM directly or with cache miss then hit
         buf[0] = reg[0];
         buf[1] = reg[1];
@@ -75,11 +76,11 @@ void __device__ _tsr_producer(
             buf[194] = reg[14];
             buf[195] = reg[15];
         }
+        
+        // Mark buffer as filled
+        queue[2 * index] = 1;
 
         // Advance
         src += WARPTILE_K * PRODUCERS;
-
-        // Mark buffer as filled
-        queue[2 * index] = 1;
     }
 }

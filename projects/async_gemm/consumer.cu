@@ -66,6 +66,12 @@ void __device__ _tsr_consumer(
 
             consumer_smem_to_reg(A_offs_buff, reg_A);
             consumer_smem_to_reg(B_offs_buff, reg_B);
+
+            // Mark buffer as consumed
+            if (op == (OP_PER_WARPTILE - 1)) {
+                queue[index] = 0;
+            }
+
             reg_D = __builtin_amdgcn_mfma_f32_16x16x32_fp8_fp8(
                 reinterpret_cast<long>(reg_A),
                 reinterpret_cast<long>(reg_B),
@@ -73,12 +79,11 @@ void __device__ _tsr_consumer(
             );
 
             // Advance
-            A_offs_buff += OP_MN * OP_K;
-            B_offs_buff += OP_MN * OP_K;
+            if (op < (OP_PER_WARPTILE - 1)) {
+                A_offs_buff += OP_MN * OP_K;
+                B_offs_buff += OP_MN * OP_K;
+            }
         }
-
-        // Mark buffer as consumed
-        queue[index] = 0;
     }
 
     // Prepare store
