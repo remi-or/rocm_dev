@@ -34,7 +34,7 @@ void __device__ _tsr_producer(
     fp8 reg[elems_per_thread];
 
     // K-wise loop
-    const int k_blocks = k / WARPTILE_K;
+    const int k_blocks = infer_k_blocks(k);
     int index;
     fp8* buf;
 

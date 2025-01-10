@@ -48,7 +48,7 @@ void __device__ _tsr_consumer(
     int index;
     fp8 *A_offs_buff, *B_offs_buff;
     const int consumer_id = (threadIdx.x / WARPSIZE) - (2 * PRODUCERS);
-    const int k_blocks = k / WARPTILE_K;
+    const int k_blocks = infer_k_blocks(k);
 
     for (int b = consumer_id; b < k_blocks; b += CONSUMERS) {
         index = b % QSIZE;
@@ -96,27 +96,30 @@ void __device__ _tsr_consumer(
     int stride;
     float* out;
 
-    // If there is only one consumer, store directly in gmem
-    if (CONSUMERS == 1) {
+    // If there is only one consumer and no split-k, store directly in gmem
+    if ((CONSUMERS == 1) && (SPLIT_K == 1)) {
         #pragma unroll
         for (int i = 0; i < 4; i++) {
             D[i * n] = reg_D[i];
         }
     }
 
-    // Otherwise, either use global atomics
+    // Otherwise, use global atomics
     else if (G_ATOMICS) {
-        // Initialize 
-        if (consumer_id == 0) {
-            #pragma unroll
-            for (int i = 0; i < 4; i++) {
-                D[i * n] = reg_D[i];
+
+        // Initialize if there is no split-k (otherwise, initializtion is assumed)
+        if (SPLIT_K == 1) {
+            if (consumer_id == 0) {
+                #pragma unroll
+                for (int i = 0; i < 4; i++) {
+                    D[i * n] = reg_D[i];
+                }
             }
+            __syncthreads();
         }
-        __syncthreads();
 
         // Accumulate
-        if (consumer_id > 0) {
+        if (consumer_id > (1 - SPLIT_K)) {
             #pragma unroll
             for (int i = 0; i < 4; i++) {
                 atomicAdd(&D[i * n], reg_D[i]);

@@ -24,6 +24,10 @@ void __global__ _tsr_kernel(
     __shared__ float D_buffer[(CONSUMERS > 1 && !G_ATOMICS) ? WARPTILE_M * WARPTILE_N * CONSUMERS : 0];
     __syncthreads();
 
+    // Account for split-k
+    A += blockIdx.z * WARPTILE_K * K_BLOCKS(k);
+    B += blockIdx.z * WARPTILE_K * K_BLOCKS(k);
+
     // Infer warp specialization
     const int warp_id = threadIdx.x / WARPSIZE;
 
@@ -70,7 +74,7 @@ void async_gemm(
     // Prepare kernel launch
     const int grid_m = m / WARPTILE_M;
     const int grid_n = n / WARPTILE_N;
-    dim3 grid(grid_m, grid_n, 1);
+    dim3 grid(grid_m, grid_n, SPLIT_K);
     dim3 block((2 * PRODUCERS + CONSUMERS) * WARPSIZE, 1, 1);
 
     // Launch kernel

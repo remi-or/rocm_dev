@@ -28,6 +28,22 @@
 #define CONSUMERS 2
 #define QSIZE 28
 #define G_ATOMICS true
+#define SPLIT_K 2
 
 #define ELEMS_PER_THREADS ((WARPTILE_M * WARPTILE_N) / WARPSIZE)
 #define THREADS_PER_ROW (WARPTILE_N / ELEMS_PER_THREADS)
+
+
+#define K_BLOCKS(k) (((k / WARPTILE_K) / SPLIT_K))
+
+int inline __device__ infer_k_blocks(const int &k) {
+    if (SPLIT_K == 1) {
+        return k / WARPTILE_K;
+    } else {
+        if (blockIdx.z < SPLIT_K - 1) {
+            return K_BLOCKS(k);
+        } else {
+            return (k / WARPTILE_K) - (SPLIT_K - 1) * K_BLOCKS(k);
+        }
+    }
+}
