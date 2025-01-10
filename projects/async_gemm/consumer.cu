@@ -17,8 +17,8 @@ void inline __device__ consumer_smem_to_reg(fp8* &buffer, fp8x8 &reg)
 void __device__ _tsr_consumer(
     fp8* A_buffer,
     fp8* B_buffer,
-    float* D_buffer,
     float* D,
+    float* D_buffer,
     uint16* queue,
     const int n,
     const int k
@@ -86,27 +86,46 @@ void __device__ _tsr_consumer(
         }
     }
 
-    // Prepare store
-    int stride;
-    float* out;
+    // Relocate on D
     int out_m = (thread_id / 16) * 4;
     int out_n = (thread_id % 16);
+    D += (blockIdx.x * WARPTILE_M + out_m) * n + (blockIdx.y * WARPTILE_N + out_n);
+
+    __syncthreads();
+
+    int stride;
+    float* out;
 
     // If there is only one consumer, store directly in gmem
     if (CONSUMERS == 1) {
-        out = D + (blockIdx.x * WARPTILE_M + out_m) * n + (blockIdx.y * WARPTILE_N + out_n);
-        stride = n;
-    }
-    // Otherwise, store in a shared memory buffer
-    else {
-        out = D_buffer + ((out_m * WARPTILE_N) + out_n) * CONSUMERS + consumer_id;
-        stride = WARPTILE_N * CONSUMERS;
+        #pragma unroll
+        for (int i = 0; i < 4; i++) {
+            D[i * n] = reg_D[i];
+        }
     }
 
-    // Store
-    #pragma unroll
-    for (int i = 0; i < 4; i++) {
-        out[0] = reg_D[i];
-        out += stride;
+    // Otherwise, either use global atomics
+    else if (G_ATOMICS) {
+        // Initialize 
+        if (consumer_id == 0) {
+            #pragma unroll
+            for (int i = 0; i < 4; i++) {
+                D[i * n] = reg_D[i];
+            }
+        }
+        __syncthreads();
+
+        // Accumulate
+        if (consumer_id > 0) {
+            #pragma unroll
+            for (int i = 0; i < 4; i++) {
+                atomicAdd(&D[i * n], reg_D[i]);
+            }
+        }
+    }
+
+    // Or shared buffer
+    else {
+        // WIP
     }
 }

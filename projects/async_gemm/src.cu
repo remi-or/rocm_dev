@@ -21,7 +21,7 @@ void __global__ _tsr_kernel(
     // Declare shared buffer
     __shared__ fp8 A_buffer[WARPTILE_M * WARPTILE_K * QSIZE];
     __shared__ fp8 B_buffer[WARPTILE_K * WARPTILE_N * QSIZE];
-    __shared__ float D_buffer[(CONSUMERS == 1) ? 0 : (CONSUMERS * WARPTILE_M * WARPTILE_N)];
+    __shared__ float D_buffer[(CONSUMERS > 1 && !G_ATOMICS) ? WARPTILE_M * WARPTILE_N * CONSUMERS : 0];
     __syncthreads();
 
     // Infer warp specialization
@@ -43,40 +43,7 @@ void __global__ _tsr_kernel(
     // Consumers warp
     else {
         uint16* q = reinterpret_cast<uint16*>(&queue[0]);
-        _tsr_consumer(&A_buffer[0], &B_buffer[0], &D_buffer[0], D, q, n, k);
-    }
-
-    // If there is more than one consumer, we need to transfer the result from smem to gmem
-    static constexpr int output_elems_per_thread = (WARPTILE_M * WARPTILE_N) / WARPSIZE;
-    static constexpr int threads_per_row = WARPTILE_N / output_elems_per_thread;
-
-    if (CONSUMERS > 1) {
-        __syncthreads();
-        if (warp_id == 0) {
-
-            // Declare output registers
-            float* d = &D_buffer[0] + threadIdx.x * output_elems_per_thread * CONSUMERS;
-            float reg_D[output_elems_per_thread];
-
-            // Loop through each output elements
-            for (int i = 0; i < output_elems_per_thread; i++) {
-
-                // Reduce across consumers
-                reg_D[i] = d[0];
-                #pragma unroll 
-                for (int j = 1; j < CONSUMERS; j++) {
-                    reg_D[i] += d[j];
-                }
-                d += CONSUMERS;
-            }
-
-            // Store back in gmem
-            D += (blockIdx.x * WARPTILE_M * n) + (blockIdx.y * WARPTILE_N);
-            D += (threadIdx.x / threads_per_row) * n + (threadIdx.x % threads_per_row) * output_elems_per_thread; 
-            for (int i = 0; i < output_elems_per_thread; i++) {
-                D[i] = (out_dtype) reg_D[i];
-            }
-        }
+        _tsr_consumer(&A_buffer[0], &B_buffer[0], D, &D_buffer[0], q, n, k);
     }
 }
 
