@@ -14,14 +14,19 @@ if __name__ == "__main__":
     parser.add_argument("--message", "-m", default="")
     parser.add_argument("--arguments", "-a", default="")
     parser.add_argument("--verbose", "-v", action="store_true")
+    parser.add_argument("--skip-test", "-st", action="store_true")
     args = parser.parse_args()
     project = Project(str(args.project))
     message = str(args.message)
     arguments = str(args.arguments)
     verbose = bool(args.verbose)
+    skip_test = bool(args.skip_test)
 
     # Compile and run test
-    test_output = project.compile_and_run("test.cu", arguments)
+    if skip_test:
+        test_output = "SKIPPED"
+    else:
+        test_output = project.compile_and_run("test.cu", arguments)
     
     # Compile and run benchmark
     time_string = project.compile_and_run("bench.cu", arguments)

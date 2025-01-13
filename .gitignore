@@ -5,3 +5,5 @@ before_big_refacto/
 backups/
 data/
 build/
+
+async_gemm_wide/
