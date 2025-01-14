@@ -10,7 +10,7 @@ void inline __device__ consumer_smem_to_reg8(fp8* &buffer, fp8x8 &reg)
     // 32 bits load from the same bank, hopefully extension of the first load
     #pragma unroll
     for (int i = 0; i < 4; i++) {
-        reg[4 + i] = buffer[i + 4 * 32];
+        reg[4 + i] = buffer[i + 32*E_P_BANK];
     }
 }
 
@@ -32,7 +32,8 @@ void __device__ _tsr_consumer(
     float* D,
     uint8* queue,
     const int n,
-    const int k
+    const int k,
+    const int k_blocks
 ) {
     // Compute thread position
     const int thread_id = threadIdx.x % WARPSIZE;
@@ -44,7 +45,7 @@ void __device__ _tsr_consumer(
     const int consumer_id = (threadIdx.x / WARPSIZE) - (A_PRODUCERS + B_LANES * B_PRODUCERS);
     if (TIED_CONSUMER) {
         B_buffer += (consumer_id % B_LANES) * OP_N * WARPTILE_K;
-        queue += (consumer_id % B_LANES);
+        queue += 2 * (consumer_id % B_LANES);
         D += (consumer_id % B_LANES) * OP_N;        
     }
 
@@ -63,7 +64,6 @@ void __device__ _tsr_consumer(
     int index;
     fp8 *A_offs_buff, *B_offs_buff;
     const int start = TIED_CONSUMER ? (consumer_id / B_LANES) : consumer_id;
-    const int k_blocks = infer_k_blocks(k);
 
     for (int b = start; b < k_blocks; b+=CONSUMERS) {
 
@@ -72,20 +72,23 @@ void __device__ _tsr_consumer(
         A_offs_buff = A_buffer + index * (WARPTILE_M * WARPTILE_K);
         B_offs_buff = B_buffer + index * (WARPTILE_N * WARPTILE_K);
 
+        // Load A buffer
+        while (!queue[2 * (B_LANES * index)]) {
+            asm volatile("s_sleep 0");
+        }
+        consumer_smem_to_reg8(A_offs_buff, reg_A);
+        #pragma unroll
+        for (int l = 0; l < (TIED_CONSUMER ? 1 : B_LANES); l++) { queue[2 *B_LANES*index + 2*l] = 0; }
+
         #pragma unroll
         for (int lane = 0; lane < (TIED_CONSUMER ? 1 : B_LANES); lane++) {
 
             // Wait for buffer to be filled
-            while (!queue[2 * (B_LANES * index + lane) + 1] || ((lane == 0) && !queue[2 * (B_LANES * index + lane)]) ) {
+            while (!queue[2 * (B_LANES * index + lane) + 1]) {
                 asm volatile("s_sleep 0");
             }
 
             // Consume
-            if (lane == 0) {
-                consumer_smem_to_reg8(A_offs_buff, reg_A);
-                #pragma unroll
-                for (int l = 0; l < B_LANES; l++) { queue[2 *B_LANES*index + 2*l] = 0; }
-            }
             consumer_smem_to_reg16(B_offs_buff, reg_B);
             // Mark buffer as consumed
             queue[2 * (B_LANES * index + lane) + 1] = 0;
@@ -113,12 +116,8 @@ void __device__ _tsr_consumer(
     // Relocate on D
     int out_m = (thread_id / 16) * 2;
     int out_n = (thread_id % 16);
-    D += (blockIdx.x * WARPTILE_M + out_m) * n + (blockIdx.y * WARPTILE_N + out_n);
+    D += out_m * n + out_n;
 
-    __syncthreads();
-
-    int stride;
-    float* out;
 
     // If there is only one consumer and no split-k, store directly in gmem
     if ((CONSUMERS == 1) && (SPLIT_K == 1)) {
@@ -133,25 +132,25 @@ void __device__ _tsr_consumer(
     else if (G_ATOMICS) {
 
         // Initialize if there is no split-k (otherwise, initializtion is assumed)
-        if (SPLIT_K == 1) {
-            if (consumer_id == 0) {
-                #pragma unroll
-                for (int i = 0; i < (TIED_CONSUMER ? 1 : B_LANES); i++) {
-                    D[0 + i*OP_N] = reg_D[i][0];
-                    D[n + i*OP_N] = reg_D[i][2];
-                }
-            }
-            __syncthreads();
-        }
+        // if (SPLIT_K == 1) {
+        //     if (consumer_id == 0) {
+        //         #pragma unroll
+        //         for (int i = 0; i < (TIED_CONSUMER ? 1 : B_LANES); i++) {
+        //             D[0 + i*OP_N] = reg_D[i][0];
+        //             D[n + i*OP_N] = reg_D[i][2];
+        //         }
+        //     }
+        //     __syncthreads();
+        // }
 
         // Accumulate
-        if (consumer_id > (1 - SPLIT_K)) {
-            #pragma unroll
-            for (int i = 0; i < (TIED_CONSUMER ? 1 : B_LANES); i++) {
-                atomicAdd(&D[0 + i*OP_N], reg_D[i][0]);
-                atomicAdd(&D[n + i*OP_N], reg_D[i][2]);
-            }
+        // if (consumer_id > (1 - SPLIT_K)) {
+        #pragma unroll
+        for (int i = 0; i < (TIED_CONSUMER ? 1 : B_LANES); i++) {
+            atomicAdd(&D[0 + i*OP_N], reg_D[i][0]);
+            atomicAdd(&D[n + i*OP_N], reg_D[i][2]);
         }
+        // }
     }
 
     // // Or shared buffer

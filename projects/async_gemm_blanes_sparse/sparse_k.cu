@@ -12,35 +12,56 @@ void __global__ _tsr_kernel(
 ) {
     // Initialize shared queue
     __shared__ uint8 queue[2 * B_LANES * QSIZE];
-    if (threadIdx.x == 0) {
-        #pragma unroll
-        for (int q = 0; q < 2 * B_LANES * QSIZE; q++) {
-            queue[q] = 0;
-        }
+    if (threadIdx.x < 2 * B_LANES * QSIZE) {
+        queue[threadIdx.x] = 0;
     }
     // Declare shared buffer
     __shared__ fp8 A_buffer[WARPTILE_M * WARPTILE_K * QSIZE];
     __shared__ fp8 B_buffer[WARPTILE_N * WARPTILE_K * QSIZE];
     __syncthreads();
 
-    // Infer warp specialization
-    const int warp_id = threadIdx.x / WARPSIZE;
+    // Tiles loop
+    int curr_n, curr_k, k_blocks;
+    const int tiles = (n / WARPTILE_N) * SPLIT_K;
+    const int tpw = max(CDIV(tiles, CU), 1);
 
-    // Account for split-k
-    A += blockIdx.z * WARPTILE_K * K_BLOCKS(k);
-    B += blockIdx.z * WARPTILE_K * K_BLOCKS(k);
+    for (int warptile = (tpw * blockIdx.x); warptile < min(tiles, tpw * (blockIdx.x + 1)); warptile++) {
 
-    // A producer warp
-    if (warp_id < A_PRODUCERS) {
-        _tsr_A_producer(A, &A_buffer[0], &queue[0], k); } 
-    // B producer warp
-    else if (warp_id < A_PRODUCERS + B_LANES * B_PRODUCERS) {
-        _tsr_B_producer(B, &B_buffer[0], &queue[0], k); }
-    // Consumers warp
-    else {
-        // uint16* q = reinterpret_cast<uint16*>(&queue[0]);
-        _tsr_consumer(&A_buffer[0], &B_buffer[0], D, &queue[0], n, k);
-    }
+        // Compute tile position
+        curr_n = (warptile % (n / WARPTILE_N)) * WARPTILE_N;
+        curr_k = (warptile / (n / WARPTILE_N)) * WARPTILE_K * K_BLOCKS(k);
+        k_blocks = ((warptile / (n / WARPTILE_N)) == SPLIT_K - 1) ? (k / WARPTILE_K) - (SPLIT_K - 1) * K_BLOCKS(k) : K_BLOCKS(k);
+
+        // A producer warp
+        if (threadIdx.x < A_PRODUCERS * WARPSIZE) {
+            _tsr_A_producer(
+                A + curr_k, 
+                &A_buffer[0], 
+                &queue[0],
+                k, k_blocks
+            ); 
+        } 
+        // B producer warp
+        else if (threadIdx.x < A_PRODUCERS * WARPSIZE + B_LANES * B_PRODUCERS * WARPSIZE) {
+            _tsr_B_producer(
+                B + curr_n * k + curr_k,
+                &B_buffer[0],
+                &queue[0],
+                k, k_blocks
+            ); 
+        }
+        // Consumers warp
+        else {
+            _tsr_consumer(
+                &A_buffer[0],
+                &B_buffer[0],
+                D + curr_n,
+                &queue[0],
+                n,
+                k, k_blocks
+            );
+        }
+    }    
 }
 
 template <typename out_dtype>
@@ -62,7 +83,7 @@ void async_gemm(
     // Prepare kernel launch
     const int grid_m = m / WARPTILE_M;
     const int grid_n = n / WARPTILE_N;
-    dim3 grid(grid_m, grid_n, SPLIT_K);
+    dim3 grid(CU, 1, 1);
 
     int warps = 0;
     warps += A_PRODUCERS;
@@ -91,23 +112,21 @@ void async_gemm(
 //     const fp8* __restrict__ B_ = (const fp8* __restrict__) B.data_ptr(); 
 //     float* __restrict__ D_ = (float* __restrict__) D.data_ptr(); 
 
-//     // Check shapes
+//         // Check shapes
 //     if ((m % WARPTILE_M != 0) || (n % WARPTILE_N != 0) || (k % WARPTILE_K != 0)) {
 //         std::cerr << "Either m, n or k is not divisible by the corresponding WARPTILE_ :";
 //         std::cerr << m << ", " << n << ", " << k << std::endl;
 //         exit(1);
 //     }
 
-    // // Prepare kernel launch
-    // const int grid_m = m / WARPTILE_M;
-    // const int grid_n = n / WARPTILE_N;
-    // dim3 grid(grid_m, grid_n, SPLIT_K);
-    
-    // int warps = 0;
-    // warps += A_PRODUCERS;
-    // warps += B_PRODUCERS * B_LANES;
-    // warps += CONSUMERS * (TIED_CONSUMER ? B_LANES : 1);
-    // dim3 block(warps * WARPSIZE, 1, 1);
+//     // Prepare kernel launch
+//     dim3 grid(CU, 1, 1);
+
+//     int warps = 0;
+//     warps += A_PRODUCERS;
+//     warps += B_PRODUCERS * B_LANES;
+//     warps += CONSUMERS * (TIED_CONSUMER ? B_LANES : 1);
+//     dim3 block(warps * WARPSIZE, 1, 1);
 
 //     const at::cuda::OptionalCUDAGuard device_guard(device_of(A));
 //     const cudaStream_t stream = at::cuda::getCurrentCUDAStream();

@@ -24,6 +24,7 @@
 #define OP_K 64
 #define E_P_BANK 4
 #define NB_BANKS 32
+#define CU 304
 
 #define WARPTILE_M OP_M
 #define WARPTILE_N (OP_N * B_LANES)
@@ -33,23 +34,13 @@
 
 #define A_PRODUCERS 3
 #define B_PRODUCERS 3
-#define CONSUMERS 4
+#define CONSUMERS 3
 
 #define B_LANES 3
 
 #define TIED_CONSUMER false
-#define QSIZE 12
-#define SPLIT_K 1
-
-
-// A - 35 57 37 63
-// B0 - 202 82 214 259
-// B1 - 0 47 0 0 
-// B2 - 0 515 472 512
-// C - 0 0 0 0 
-
-#define ELEMS_PER_THREADS ((WARPTILE_M * WARPTILE_N) / WARPSIZE)
-#define THREADS_PER_ROW (WARPTILE_N / ELEMS_PER_THREADS)
+#define QSIZE 18
+#define SPLIT_K 8
 
 
 #define K_BLOCKS(k) (((k / WARPTILE_K) / SPLIT_K))
@@ -65,3 +56,5 @@ int inline __device__ infer_k_blocks(const int &k) {
         }
     }
 }
+
+#define CDIV(a, b) ((a + b - 1) / b)

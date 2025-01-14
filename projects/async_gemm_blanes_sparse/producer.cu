@@ -4,7 +4,8 @@ void __device__ _tsr_A_producer(
     const fp8* __restrict__ src,
     fp8* buffer,
     uint8* queue,
-    const int k
+    const int k,
+    const int k_blocks
 ) {
     static constexpr int elems_per_thread = 16;
     static constexpr int threads_per_ld = 8;
@@ -17,8 +18,8 @@ void __device__ _tsr_A_producer(
     const int curr_ld = (thread_id % threads_per_ld) * elems_per_thread;
     const int curr_ad = thread_id / threads_per_ld;
 
-    // Relocate thread in source (and queue for B producers)
-    src += (blockIdx.x * WARPTILE_M + curr_ad) * k;
+    // Relocate thread in source (and queue for B producers) // WARNING: currently assume m == 8
+    src += curr_ad * k;
     src += curr_ld;
     src += 2 * warp_id * WARPTILE_K;
 
@@ -29,7 +30,6 @@ void __device__ _tsr_A_producer(
     fp8 reg[elems_per_thread];
 
     // K-wise loop
-    const int k_blocks = infer_k_blocks(k);
     int index;
     fp8* buf;
 
@@ -55,7 +55,7 @@ void __device__ _tsr_A_producer(
             for (int line = 0; line < 4; line++) {
                 #pragma unroll
                 for (int j = 0; j < 4; j++){
-                    buf[4*line+j] = reg[8*(line%2) + 2*(line/2) + j + 2*(j/2)];
+                    buf[line * 32*E_P_BANK + j] = reg[8*(line%2) + 2*(line/2) + j + 2*(j/2)];
                 }
             }
         }
@@ -74,7 +74,7 @@ void __device__ _tsr_A_producer(
             for (int line = 0; line < 4; line++) {
                 #pragma unroll
                 for (int j = 0; j < 4; j++){
-                    buf[4*line+j] = reg[8*(line%2) + 2*(line/2) + j + 2*(j/2)];
+                    buf[line * 32*E_P_BANK + j] = reg[8*(line%2) + 2*(line/2) + j + 2*(j/2)];
                 }
             }
         }
@@ -91,7 +91,8 @@ void __device__ _tsr_B_producer(
     const fp8* __restrict__ src,
     fp8* buffer,
     uint8* queue,
-    const int k
+    const int k,
+    const int k_blocks
 ) {
     static constexpr int elems_per_thread = 16;
     static constexpr int threads_per_ld = 4;
@@ -107,7 +108,7 @@ void __device__ _tsr_B_producer(
     const int curr_ad = thread_id / threads_per_ld;
 
     // Relocate thread in source (and queue for B producers)
-    src += (blockIdx.y * WARPTILE_N + curr_ad) * k;
+    src += curr_ad * k;
     src += curr_ld;
     src += warp_offs * WARPTILE_K;
     src += warp_lane * OP_N * k;
@@ -121,7 +122,6 @@ void __device__ _tsr_B_producer(
     fp8 reg[elems_per_thread];
 
     // K-wise loop
-    const int k_blocks = infer_k_blocks(k);
     int index;
     fp8* buf;
 
