@@ -65,7 +65,7 @@ void __device__ _tsr_A_producer(
 
         // RIGHT -------------------------------------------------------------------------------------------------------
         // Wait for buffer to be consumed
-        while (queue[2*B_LANES*index + 6] || queue[2*B_LANES*index + 8] || queue[2*B_LANES*index + 10]) {
+        while (queue[2*B_LANES*(index+1) + 0] || queue[2*B_LANES*(index+1) + 2] || queue[2*B_LANES*(index+1) + 4]) {
             asm volatile("s_sleep 0");
         }
         // Store in smem from reg
@@ -88,7 +88,7 @@ void __device__ _tsr_A_producer(
 }
 
 void __device__ _tsr_B_producer(
-    const fp8* __restrict__ src,
+    const fp8* __restrict__ source,
     fp8* buffer,
     uint8* queue,
     const int k,
@@ -100,46 +100,48 @@ void __device__ _tsr_B_producer(
     // Infer ids
     const int warp_id = threadIdx.x / WARPSIZE;
     const int thread_id = threadIdx.x % WARPSIZE;
-    const int warp_offs = (warp_id - A_PRODUCERS) / B_LANES;
-    const int warp_lane = (warp_id - A_PRODUCERS) % B_LANES;
+    const int warp_offs = (warp_id - A_PRODUCERS);
 
     // Infer thread position in source
     const int curr_ld = (thread_id % threads_per_ld) * elems_per_thread;
     const int curr_ad = thread_id / threads_per_ld;
 
     // Relocate thread in source (and queue for B producers)
-    src += curr_ad * k;
-    src += curr_ld;
-    src += warp_offs * WARPTILE_K;
-    src += warp_lane * OP_N * k;
-    queue += 1 + 2 * warp_lane;
+    source += curr_ad * k;
+    source += curr_ld;
+    queue += 1;
 
     // Relocate thread in buffer
     buffer += (E_P_BANK * curr_ad) + ((curr_ld % 32 == 16) ? (16*E_P_BANK) : 0) + (curr_ld / 32) * (32*E_P_BANK * 4);
-    buffer += (warp_lane) * OP_N * WARPTILE_K;
 
     // Prepare registers
     fp8 reg[elems_per_thread];
 
     // K-wise loop
     int index;
+    int lane;
+    const fp8* src;
     fp8* buf;
 
-    for (int b = warp_offs; b < k_blocks; b += B_PRODUCERS) {
+    for (int b = warp_offs; b < (B_LANES * k_blocks); b += B_PRODUCERS) {
+
         // Account for cyclic queue
-        index = b % QSIZE;
-        buf = buffer + index * (WARPTILE_N * WARPTILE_K);
+        index = b % (B_LANES * QSIZE);
+        src = source + (b / B_LANES) * WARPTILE_K + (b % B_LANES) * OP_N * k;
+        buf = buffer + index * (OP_N * WARPTILE_K);
 
         // Load from gmem to reg
-        #pragma unroll
-        for (int i = 0; i < elems_per_thread; i++) {
-            reg[i] = src[i];
-        }
-
+        asm volatile(
+            "global_load_dwordx4 %0, %1, off\n\t"
+            : "=v"(reg) 
+            : "v"(src)
+        );
         // Wait for buffer to be consumed
-        while (queue[2*B_LANES*index]) {
+        while (queue[2*index]) {
             asm volatile("s_sleep 0"); // TODO: try with 1
         }
+        // Make sure load is finished
+        asm volatile("s_waitcnt vmcnt(0)");
 
         // Store in smem from reg // TODO: try with GMEM -> SMEM directly or with cache miss then hit
         #pragma unroll
@@ -151,9 +153,6 @@ void __device__ _tsr_B_producer(
         }
         
         // Mark buffer as filled
-        queue[2 * B_LANES * index] = 1;
-
-        // Advance
-        src += WARPTILE_K * B_PRODUCERS;
+        queue[2 * index] = 1;
     }
 }

@@ -26,6 +26,8 @@
 #define NB_BANKS 32
 #define CU 304
 
+#define B_LANES 3
+
 #define WARPTILE_M OP_M
 #define WARPTILE_N (OP_N * B_LANES)
 #define WARPTILE_K OP_K
@@ -33,10 +35,8 @@
 #define G_ATOMICS true
 
 #define A_PRODUCERS 3
-#define B_PRODUCERS 3
+#define B_PRODUCERS 9
 #define CONSUMERS 3
-
-#define B_LANES 3
 
 #define TIED_CONSUMER false
 #define QSIZE 18

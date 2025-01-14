@@ -42,7 +42,7 @@ void __device__ _tsr_consumer(
     const int sparsity_indices = (threadIdx.x % 2) ? 0x0000EEEE : 0x00004444;
 
     // Account for warp lane
-    const int consumer_id = (threadIdx.x / WARPSIZE) - (A_PRODUCERS + B_LANES * B_PRODUCERS);
+    const int consumer_id = (threadIdx.x / WARPSIZE) - (A_PRODUCERS + B_PRODUCERS);
     if (TIED_CONSUMER) {
         B_buffer += (consumer_id % B_LANES) * OP_N * WARPTILE_K;
         queue += 2 * (consumer_id % B_LANES);

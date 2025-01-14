@@ -42,7 +42,7 @@ void __global__ _tsr_kernel(
             ); 
         } 
         // B producer warp
-        else if (threadIdx.x < A_PRODUCERS * WARPSIZE + B_LANES * B_PRODUCERS * WARPSIZE) {
+        else if (threadIdx.x < A_PRODUCERS * WARPSIZE + B_PRODUCERS * WARPSIZE) {
             _tsr_B_producer(
                 B + curr_n * k + curr_k,
                 &B_buffer[0],
@@ -87,7 +87,7 @@ void async_gemm(
 
     int warps = 0;
     warps += A_PRODUCERS;
-    warps += B_PRODUCERS * B_LANES;
+    warps += B_PRODUCERS;
     warps += CONSUMERS * (TIED_CONSUMER ? B_LANES : 1);
     dim3 block(warps * WARPSIZE, 1, 1);
 
