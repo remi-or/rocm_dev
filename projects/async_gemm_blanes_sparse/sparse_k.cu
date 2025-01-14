@@ -38,8 +38,8 @@ void __global__ _tsr_kernel(
         _tsr_B_producer(B, &B_buffer[0], &queue[0], k); }
     // Consumers warp
     else {
-        uint16* q = reinterpret_cast<uint16*>(&queue[0]);
-        _tsr_consumer(&A_buffer[0], &B_buffer[0], D, q, n, k);
+        // uint16* q = reinterpret_cast<uint16*>(&queue[0]);
+        _tsr_consumer(&A_buffer[0], &B_buffer[0], D, &queue[0], n, k);
     }
 }
 

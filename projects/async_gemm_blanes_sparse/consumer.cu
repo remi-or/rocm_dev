@@ -30,13 +30,13 @@ void __device__ _tsr_consumer(
     fp8* A_buffer,
     fp8* B_buffer,
     float* D,
-    uint16* queue,
+    uint8* queue,
     const int n,
     const int k
 ) {
     // Compute thread position
     const int thread_id = threadIdx.x % WARPSIZE;
-    A_buffer += (thread_id % 32) * 4 + (thread_id / 32) * 32*E_P_BANK * 2;
+    A_buffer += (thread_id / 2) * E_P_BANK + (threadIdx.x % 2) * 32*E_P_BANK * 2;
     B_buffer += (thread_id % 32) * 4 + (thread_id / 32) * 32*E_P_BANK * 4;
     const int sparsity_indices = (threadIdx.x % 2) ? 0x0000EEEE : 0x00004444;
 
@@ -76,18 +76,19 @@ void __device__ _tsr_consumer(
         for (int lane = 0; lane < (TIED_CONSUMER ? 1 : B_LANES); lane++) {
 
             // Wait for buffer to be filled
-            while (queue[B_LANES * index + lane] != PRODUCED_MASK) {
+            while (!queue[2 * (B_LANES * index + lane) + 1] || ((lane == 0) && !queue[2 * (B_LANES * index + lane)]) ) {
                 asm volatile("s_sleep 0");
             }
 
             // Consume
             if (lane == 0) {
                 consumer_smem_to_reg8(A_offs_buff, reg_A);
+                #pragma unroll
+                for (int l = 0; l < B_LANES; l++) { queue[2 *B_LANES*index + 2*l] = 0; }
             }
             consumer_smem_to_reg16(B_offs_buff, reg_B);
-
             // Mark buffer as consumed
-            queue[B_LANES * index + lane] = 0;
+            queue[2 * (B_LANES * index + lane) + 1] = 0;
 
             reg_D[lane] = __builtin_amdgcn_smfmac_f32_16x16x64_fp8_fp8(
                 reinterpret_cast<fp8_4x2>(reg_A),

@@ -14,17 +14,16 @@ void __device__ _tsr_A_producer(
     const int thread_id = threadIdx.x % WARPSIZE;
 
     // Infer thread position in source
-    const int curr_ld = ((thread_id % threads_per_ld) / 2) * elems_per_thread;
+    const int curr_ld = (thread_id % threads_per_ld) * elems_per_thread;
     const int curr_ad = thread_id / threads_per_ld;
 
     // Relocate thread in source (and queue for B producers)
     src += (blockIdx.x * WARPTILE_M + curr_ad) * k;
     src += curr_ld;
-    src += warp_id * WARPTILE_K;
+    src += 2 * warp_id * WARPTILE_K;
 
     // Relocate thread in buffer
-    buffer += (2*E_P_BANK * curr_ad) + ((curr_ld % 32 == 16) ? (16*E_P_BANK) : 0) + (curr_ld / 32) * (32*E_P_BANK * 2);
-    buffer += E_P_BANK * (threadIdx.x % 2);
+    buffer += (E_P_BANK * curr_ad) + (curr_ld % 64) * 2 + (curr_ld / 64) * (32*E_P_BANK * 4);
     
     // Prepare registers
     fp8 reg[elems_per_thread];
@@ -34,7 +33,7 @@ void __device__ _tsr_A_producer(
     int index;
     fp8* buf;
 
-    for (int b = warp_id; b < k_blocks; b += A_PRODUCERS) {
+    for (int b = 2 * warp_id; b < k_blocks; b += 2*A_PRODUCERS) {
         // Account for cyclic queue
         index = b % QSIZE;
         buf = buffer + index * (WARPTILE_M * WARPTILE_K);
@@ -45,41 +44,46 @@ void __device__ _tsr_A_producer(
             reg[i] = src[i];
         }
 
+        // LEFT --------------------------------------------------------------------------------------------------------
         // Wait for buffer to be consumed
         while (queue[2*B_LANES*index + 0] || queue[2*B_LANES*index + 2] || queue[2*B_LANES*index + 4]) {
-            asm volatile("s_sleep 0"); // TODO: try with 1
+            asm volatile("s_sleep 0");
         }
-
-        // Store in smem from reg // TODO: try with GMEM -> SMEM directly or with cache miss then hit
-        if (threadIdx.x % 2 == 0) {
-            buf[0] = reg[0];
-            buf[1] = reg[1];
-            buf[2] = reg[4];
-            buf[3] = reg[5];
-
-            buf[32*E_P_BANK + 0] = reg[8];
-            buf[32*E_P_BANK + 1] = reg[9];
-            buf[32*E_P_BANK + 2] = reg[12];
-            buf[32*E_P_BANK + 3] = reg[13];
-        } else {
-            buf[0] = reg[2];
-            buf[1] = reg[3];
-            buf[2] = reg[6];
-            buf[3] = reg[7];
-
-            buf[32*E_P_BANK + 0] = reg[10];
-            buf[32*E_P_BANK + 1] = reg[11];
-            buf[32*E_P_BANK + 2] = reg[14];
-            buf[32*E_P_BANK + 3] = reg[15];
+        // Store in smem from reg
+        if (threadIdx.x % 8 < 4) {
+            #pragma unroll
+            for (int line = 0; line < 4; line++) {
+                #pragma unroll
+                for (int j = 0; j < 4; j++){
+                    buf[4*line+j] = reg[8*(line%2) + 2*(line/2) + j + 2*(j/2)];
+                }
+            }
         }
-        
         // Mark buffer as filled
-        for (int l = 0; l < B_LANES; l++) {
-            queue[2 * B_LANES * index + (2 * l)] = 1;
+        #pragma unroll
+        for (int l = 0; l < B_LANES; l++) { queue[2 * B_LANES * index + (2 * l)] = 1; }
+
+        // RIGHT -------------------------------------------------------------------------------------------------------
+        // Wait for buffer to be consumed
+        while (queue[2*B_LANES*index + 6] || queue[2*B_LANES*index + 8] || queue[2*B_LANES*index + 10]) {
+            asm volatile("s_sleep 0");
         }
+        // Store in smem from reg
+        if (threadIdx.x % 8 > 3) {
+            #pragma unroll
+            for (int line = 0; line < 4; line++) {
+                #pragma unroll
+                for (int j = 0; j < 4; j++){
+                    buf[4*line+j] = reg[8*(line%2) + 2*(line/2) + j + 2*(j/2)];
+                }
+            }
+        }
+        // Mark buffer as filled
+        #pragma unroll
+        for (int l = 0; l < B_LANES; l++) { queue[2 * B_LANES * (index+1) + (2 * l)] = 1; }
 
         // Advance
-        src += WARPTILE_K * A_PRODUCERS;
+        src += WARPTILE_K * 2*A_PRODUCERS;
     }
 }
 

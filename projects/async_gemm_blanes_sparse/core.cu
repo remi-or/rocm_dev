@@ -31,11 +31,10 @@
 #define PRODUCED_MASK 257
 #define G_ATOMICS true
 
-#define A_PRODUCERS 4
+#define A_PRODUCERS 3
 #define B_PRODUCERS 3
-#define CONSUMERS 2
+#define CONSUMERS 4
 
-#define A_LOADS 2
 #define B_LANES 3
 
 #define TIED_CONSUMER false

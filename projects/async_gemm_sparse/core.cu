@@ -37,7 +37,7 @@
 
 #define QSIZE 24
 #define G_ATOMICS true
-#define SPLIT_K 32
+#define SPLIT_K 1
 
 #define K_BLOCKS(k) (((k / WARPTILE_K) / SPLIT_K))
 
