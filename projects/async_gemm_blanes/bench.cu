@@ -1,5 +1,5 @@
 #include "./../common.cuh"
-#include "./src.cu"
+#include "./sparse_k.cu"
 
 int main(int argc, char **argv) {
     HIP_CHECK( hipSetDevice(0) );

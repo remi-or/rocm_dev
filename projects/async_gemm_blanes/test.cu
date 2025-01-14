@@ -1,5 +1,5 @@
 #include "./../common.cuh"
-#include "./src.cu"
+#include "./sparse_k.cu"
 
 #include <hip/hip_fp16.h>
 

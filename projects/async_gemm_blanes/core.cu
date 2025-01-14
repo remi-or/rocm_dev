@@ -27,9 +27,9 @@
 
 #define PRODUCERS 3
 #define CONSUMERS 1
-#define QSIZE 12
+#define QSIZE 15
 #define G_ATOMICS true
-#define SPLIT_K 2
+#define SPLIT_K 1
 
 #define ELEMS_PER_THREADS ((WARPTILE_M * WARPTILE_N) / WARPSIZE)
 #define THREADS_PER_ROW (WARPTILE_N / ELEMS_PER_THREADS)

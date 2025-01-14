@@ -92,19 +92,16 @@ void async_gemm(
 
 //     // Check shapes
 //     if ((m % WARPTILE_M != 0) || (n % WARPTILE_N != 0) || (k % WARPTILE_K != 0)) {
-//         std::cerr << "Either m, n or k is not divisible by the corresponding WARPTILE_" << std::endl;
-//         exit(1);
-//     }
-//     if (OP_PER_WARPTILE != 1 && OP_PER_WARPTILE != 2) {
-//         std::cerr << "OP_PER_WARPTILE must be 1 or 2" << std::endl;
+//         std::cerr << "Either m, n or k is not divisible by the corresponding WARPTILE_ :";
+//         std::cerr << m << ", " << n << ", " << k << std::endl;
 //         exit(1);
 //     }
 
 //     // Prepare kernel launch
-//     uint32_t grid_m = (m / WARPTILE_M);
-//     uint32_t grid_n = (n / WARPTILE_N);
-//     dim3 grid(grid_m, grid_n, 1);
-//     dim3 block((2 * PRODUCERS + CONSUMERS) * WARPSIZE, 1, 1);
+//     const int grid_m = m / WARPTILE_M;
+//     const int grid_n = n / WARPTILE_N;
+//     dim3 grid(grid_m, grid_n, SPLIT_K);
+//     dim3 block((B_LANES * (CONSUMERS + PRODUCERS) + PRODUCERS) * WARPSIZE, 1, 1);
 
 //     const at::cuda::OptionalCUDAGuard device_guard(device_of(A));
 //     const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
