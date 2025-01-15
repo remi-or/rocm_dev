@@ -43,6 +43,8 @@ void __device__ _tsr_A_producer(
         for (int i = 0; i < elems_per_thread; i++) {
             reg[i] = src[i];
         }
+        // Advance
+        src += WARPTILE_K * 2*A_PRODUCERS;
 
         // LEFT --------------------------------------------------------------------------------------------------------
         // Wait for buffer to be consumed
@@ -61,10 +63,12 @@ void __device__ _tsr_A_producer(
         }
         // Mark buffer as filled
         queue[2 * B_LANES * index] = 1;
+        // Update index
+        index += 1;
 
         // RIGHT -------------------------------------------------------------------------------------------------------
         // Wait for buffer to be consumed
-        while (queue[2 * B_LANES * (index + 1)]) {
+        while (queue[2 * B_LANES * index]) {
             asm volatile("s_sleep 0");
         }
         // Store in smem from reg
@@ -78,10 +82,7 @@ void __device__ _tsr_A_producer(
             }
         }
         // Mark buffer as filled
-        queue[2 * B_LANES * (index + 1)] = 1;
-
-        // Advance
-        src += WARPTILE_K * 2*A_PRODUCERS;
+        queue[2 * B_LANES * index] = 1;
     }
 }
 

@@ -39,7 +39,7 @@
 #define CONSUMERS 3
 
 #define QSIZE 18
-#define SPLIT_K 8
+#define SPLIT_K 1
 
 
 #define K_BLOCKS(k) (((k / WARPTILE_K) / SPLIT_K))
