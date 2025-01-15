@@ -46,7 +46,7 @@ void __device__ _tsr_A_producer(
 
         // LEFT --------------------------------------------------------------------------------------------------------
         // Wait for buffer to be consumed
-        while (queue[2*B_LANES*index + 0] || queue[2*B_LANES*index + 2] || queue[2*B_LANES*index + 4]) {
+        while (queue[2 * B_LANES * index]) {
             asm volatile("s_sleep 0");
         }
         // Store in smem from reg
@@ -60,12 +60,11 @@ void __device__ _tsr_A_producer(
             }
         }
         // Mark buffer as filled
-        #pragma unroll
-        for (int l = 0; l < B_LANES; l++) { queue[2 * B_LANES * index + (2 * l)] = 1; }
+        queue[2 * B_LANES * index] = 1;
 
         // RIGHT -------------------------------------------------------------------------------------------------------
         // Wait for buffer to be consumed
-        while (queue[2*B_LANES*(index+1) + 0] || queue[2*B_LANES*(index+1) + 2] || queue[2*B_LANES*(index+1) + 4]) {
+        while (queue[2 * B_LANES * (index + 1)]) {
             asm volatile("s_sleep 0");
         }
         // Store in smem from reg
@@ -79,8 +78,7 @@ void __device__ _tsr_A_producer(
             }
         }
         // Mark buffer as filled
-        #pragma unroll
-        for (int l = 0; l < B_LANES; l++) { queue[2 * B_LANES * (index+1) + (2 * l)] = 1; }
+        queue[2 * B_LANES * (index + 1)] = 1;
 
         // Advance
         src += WARPTILE_K * 2*A_PRODUCERS;
@@ -137,7 +135,7 @@ void __device__ _tsr_B_producer(
             : "v"(src)
         );
         // Wait for buffer to be consumed
-        while (queue[2*index]) {
+        while (queue[2 * index]) {
             asm volatile("s_sleep 0"); // TODO: try with 1
         }
         // Make sure load is finished

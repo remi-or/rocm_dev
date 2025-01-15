@@ -38,7 +38,6 @@
 #define B_PRODUCERS 9
 #define CONSUMERS 3
 
-#define TIED_CONSUMER false
 #define QSIZE 18
 #define SPLIT_K 8
 

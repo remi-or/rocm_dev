@@ -43,27 +43,22 @@ void __device__ _tsr_consumer(
 
     // Account for warp lane
     const int consumer_id = (threadIdx.x / WARPSIZE) - (A_PRODUCERS + B_PRODUCERS);
-    if (TIED_CONSUMER) {
-        B_buffer += (consumer_id % B_LANES) * OP_N * WARPTILE_K;
-        queue += 2 * (consumer_id % B_LANES);
-        D += (consumer_id % B_LANES) * OP_N;        
-    }
 
     // Declare input registers
     fp8x8 reg_A;
     fp8x16 reg_B;
 
     // Initialize output registers
-    f32x4 reg_D[TIED_CONSUMER ? 1 : B_LANES];
+    f32x4 reg_D[B_LANES];
     #pragma unroll
-    for (int i = 0; i < (TIED_CONSUMER ? 1 : B_LANES); i++) {
+    for (int i = 0; i < (B_LANES); i++) {
         reg_D[i][0] = 0.0f; reg_D[i][1] = 0.0f; reg_D[i][2] = 0.0f; reg_D[i][3] = 0.0f;
     }
 
     // K-wise loop
     int index;
     fp8 *A_offs_buff, *B_offs_buff;
-    const int start = TIED_CONSUMER ? (consumer_id / B_LANES) : consumer_id;
+    const int start = consumer_id;
 
     for (int b = start; b < k_blocks; b+=CONSUMERS) {
 
@@ -73,15 +68,14 @@ void __device__ _tsr_consumer(
         B_offs_buff = B_buffer + index * (WARPTILE_N * WARPTILE_K);
 
         // Load A buffer
-        while (!queue[2 * (B_LANES * index)]) {
+        while (!queue[2 * B_LANES * index]) {
             asm volatile("s_sleep 0");
         }
         consumer_smem_to_reg8(A_offs_buff, reg_A);
-        #pragma unroll
-        for (int l = 0; l < (TIED_CONSUMER ? 1 : B_LANES); l++) { queue[2 *B_LANES*index + 2*l] = 0; }
+        queue[2 * B_LANES * index] = 0;
 
         #pragma unroll
-        for (int lane = 0; lane < (TIED_CONSUMER ? 1 : B_LANES); lane++) {
+        for (int lane = 0; lane < B_LANES; lane++) {
 
             // Wait for buffer to be filled
             while (!queue[2 * (B_LANES * index + lane) + 1]) {
@@ -102,13 +96,12 @@ void __device__ _tsr_consumer(
             );
 
             B_offs_buff += OP_N * OP_K;
-
         }
     }
 
     // Fuse complementary registers
     #pragma unroll
-    for (int i = 0; i < (TIED_CONSUMER ? 1 : B_LANES); i++) {
+    for (int i = 0; i < B_LANES; i++) {
         reg_D[i][0] += reg_D[i][1];
         reg_D[i][2] += reg_D[i][3];
     }
@@ -122,7 +115,7 @@ void __device__ _tsr_consumer(
     // If there is only one consumer and no split-k, store directly in gmem
     if ((CONSUMERS == 1) && (SPLIT_K == 1)) {
         #pragma unroll
-        for (int i = 0; i < (TIED_CONSUMER ? 1 : B_LANES); i++) {
+        for (int i = 0; i < B_LANES; i++) {
             D[    i*OP_N] = reg_D[i][0];
             D[n + i*OP_N] = reg_D[i][2];
         }
@@ -146,7 +139,7 @@ void __device__ _tsr_consumer(
         // Accumulate
         // if (consumer_id > (1 - SPLIT_K)) {
         #pragma unroll
-        for (int i = 0; i < (TIED_CONSUMER ? 1 : B_LANES); i++) {
+        for (int i = 0; i < B_LANES; i++) {
             atomicAdd(&D[0 + i*OP_N], reg_D[i][0]);
             atomicAdd(&D[n + i*OP_N], reg_D[i][2]);
         }

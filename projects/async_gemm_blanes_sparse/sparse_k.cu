@@ -88,7 +88,7 @@ void async_gemm(
     int warps = 0;
     warps += A_PRODUCERS;
     warps += B_PRODUCERS;
-    warps += CONSUMERS * (TIED_CONSUMER ? B_LANES : 1);
+    warps += CONSUMERS;
     dim3 block(warps * WARPSIZE, 1, 1);
 
     // Launch kernel
@@ -125,7 +125,7 @@ void async_gemm(
 //     int warps = 0;
 //     warps += A_PRODUCERS;
 //     warps += B_PRODUCERS * B_LANES;
-//     warps += CONSUMERS * (TIED_CONSUMER ? B_LANES : 1);
+//     warps += CONSUMERS;
 //     dim3 block(warps * WARPSIZE, 1, 1);
 
 //     const at::cuda::OptionalCUDAGuard device_guard(device_of(A));
