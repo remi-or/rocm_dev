@@ -31,11 +31,10 @@
 #define WARPTILE_M OP_M
 #define WARPTILE_N (OP_N * B_LANES)
 #define WARPTILE_K OP_K
-#define PRODUCED_MASK 257
 #define G_ATOMICS true
 
-#define A_PRODUCERS 3
-#define B_PRODUCERS 9
+#define A_PRODUCERS 2
+#define B_PRODUCERS 11
 #define CONSUMERS 3
 
 #define QSIZE 18
@@ -43,17 +42,5 @@
 
 
 #define K_BLOCKS(k) (((k / WARPTILE_K) / SPLIT_K))
-
-int inline __device__ infer_k_blocks(const int &k) {
-    if (SPLIT_K == 1) {
-        return k / WARPTILE_K;
-    } else {
-        if (blockIdx.z < SPLIT_K - 1) {
-            return K_BLOCKS(k);
-        } else {
-            return (k / WARPTILE_K) - (SPLIT_K - 1) * K_BLOCKS(k);
-        }
-    }
-}
 
 #define CDIV(a, b) ((a + b - 1) / b)

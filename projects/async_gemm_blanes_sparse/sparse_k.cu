@@ -30,7 +30,7 @@ void __global__ _tsr_kernel(
         // Compute tile position
         curr_n = (warptile % (n / WARPTILE_N)) * WARPTILE_N;
         curr_k = (warptile / (n / WARPTILE_N)) * WARPTILE_K * K_BLOCKS(k);
-        k_blocks = ((warptile / (n / WARPTILE_N)) == SPLIT_K - 1) ? (k / WARPTILE_K) - (SPLIT_K - 1) * K_BLOCKS(k) : K_BLOCKS(k);
+        k_blocks = ((warptile / (n / WARPTILE_N)) == (SPLIT_K - 1)) ? (k / WARPTILE_K) - (SPLIT_K - 1) * K_BLOCKS(k) : K_BLOCKS(k);
 
         // A producer warp
         if (threadIdx.x < A_PRODUCERS * WARPSIZE) {

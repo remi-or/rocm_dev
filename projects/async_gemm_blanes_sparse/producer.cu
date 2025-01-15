@@ -84,6 +84,8 @@ void __device__ _tsr_A_producer(
         // Mark buffer as filled
         queue[2 * B_LANES * index] = 1;
     }
+    __syncthreads();
+    // __syncthreads();
 }
 
 void __device__ _tsr_B_producer(
@@ -117,7 +119,9 @@ void __device__ _tsr_B_producer(
     fp8 reg[elems_per_thread];
 
     // K-wise loop
-    int index;
+    uint8 p_state = 0;
+    bool first_queue = true;
+    int index = warp_offs;
     int lane;
     const fp8* src;
     fp8* buf;
@@ -125,24 +129,23 @@ void __device__ _tsr_B_producer(
     for (int b = warp_offs; b < (B_LANES * k_blocks); b += B_PRODUCERS) {
 
         // Account for cyclic queue
-        index = b % (B_LANES * QSIZE);
         src = source + (b / B_LANES) * WARPTILE_K + (b % B_LANES) * OP_N * k;
         buf = buffer + index * (OP_N * WARPTILE_K);
-
         // Load from gmem to reg
-        asm volatile(
-            "global_load_dwordx4 %0, %1, off\n\t"
-            : "=v"(reg) 
-            : "v"(src)
-        );
+        asm volatile("global_load_dwordx4 %0, %1, off\n\t" : "=v"(reg) : "v"(src));
         // Wait for buffer to be consumed
-        while (queue[2 * index]) {
-            asm volatile("s_sleep 0"); // TODO: try with 1
+        if (first_queue) {
+            while (queue[2 * index] == 2) {
+                asm volatile("s_sleep 0");
+            }
+        } else {
+            while (queue[2 * index] != p_state) {
+                asm volatile("s_sleep 0");
+            }
         }
         // Make sure load is finished
         asm volatile("s_waitcnt vmcnt(0)");
-
-        // Store in smem from reg // TODO: try with GMEM -> SMEM directly or with cache miss then hit
+        // Store in smem from reg
         #pragma unroll
         for (int i = 0; i < 4; i++) {
             #pragma unroll
@@ -150,8 +153,14 @@ void __device__ _tsr_B_producer(
                 buf[32*4*i + j] = reg[4*i + j];
             }
         }
-        
         // Mark buffer as filled
-        queue[2 * index] = 1;
+        queue[2 * index] = 2;
+        // Update index
+        index += B_PRODUCERS;
+        p_state = (index >= QSIZE * B_LANES) ? (!p_state) : p_state;
+        first_queue = first_queue && !p_state;
+        index -= (index >= QSIZE * B_LANES) ? QSIZE * B_LANES : 0;
     }
+    __syncthreads();
+    // __syncthreads();
 }

@@ -56,14 +56,13 @@ void __device__ _tsr_consumer(
     }
 
     // K-wise loop
-    int index;
+    uint8 p_state = 1;
+    int index = consumer_id;
     fp8 *A_offs_buff, *B_offs_buff;
-    const int start = consumer_id;
 
-    for (int b = start; b < k_blocks; b+=CONSUMERS) {
+    for (int b = consumer_id; b < k_blocks; b+=CONSUMERS) {
 
         // Account for cyclic queue
-        index = b % QSIZE;
         A_offs_buff = A_buffer + index * (WARPTILE_M * WARPTILE_K);
         B_offs_buff = B_buffer + index * (WARPTILE_N * WARPTILE_K);
 
@@ -78,14 +77,14 @@ void __device__ _tsr_consumer(
         for (int lane = 0; lane < B_LANES; lane++) {
 
             // Wait for buffer to be filled
-            while (!queue[2 * (B_LANES * index + lane) + 1]) {
+            while (queue[2 * (B_LANES * index + lane) + 1] != 2) {
                 asm volatile("s_sleep 0");
             }
 
             // Consume
             consumer_smem_to_reg16(B_offs_buff, reg_B);
             // Mark buffer as consumed
-            queue[2 * (B_LANES * index + lane) + 1] = 0;
+            queue[2 * (B_LANES * index + lane) + 1] = p_state;
 
             reg_D[lane] = __builtin_amdgcn_smfmac_f32_16x16x64_fp8_fp8(
                 reinterpret_cast<fp8_4x2>(reg_A),
@@ -97,7 +96,19 @@ void __device__ _tsr_consumer(
 
             B_offs_buff += OP_N * OP_K;
         }
+
+        // Update index
+        index += CONSUMERS;
+        p_state = (index >= QSIZE) ? (!p_state) : p_state;
+        index -= (index >= QSIZE) ? QSIZE : 0;
     }
+    __syncthreads();
+    // if (threadIdx.x == 1023) {
+    //     for (int i = 0; i < B_LANES * QSIZE; i++) {
+    //         queue[2*i+1] = 0;
+    //     }
+    // }
+    // __syncthreads();
 
     // Fuse complementary registers
     #pragma unroll
