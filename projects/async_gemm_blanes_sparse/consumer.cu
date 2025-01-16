@@ -107,23 +107,18 @@ void __device__ _tsr_consumer(
     // Bring warps back in order
     role_id = b - k_blocks;
 
-    // Fuse complementary registers
-    #pragma unroll
-    for (int i = 0; i < B_LANES; i++) {
-        reg_D[i][0] += reg_D[i][1];
-        reg_D[i][2] += reg_D[i][3];
-    }
-
     // Relocate on D
     int out_m = (thread_id / 16) * 2;
     int out_n = (thread_id % 16);
     D += out_m * n + out_n;
 
-    // Account for dropped cols
+    // Fuse complementary registers
+    bool dropped;
     #pragma unroll
     for (int i = 0; i < B_LANES; i++) {
-        reg_D[i][0] = ((out_n + i * OP_N) < dropped_cols) ? 0.0f : reg_D[i][0];
-        reg_D[i][2] = ((out_n + i * OP_N) < dropped_cols) ? 0.0f : reg_D[i][2];
+        dropped = (out_n + i * OP_N) < dropped_cols;
+        reg_D[i][0] = (dropped) * (reg_D[i][0] + reg_D[i][1]);
+        reg_D[i][2] = (dropped) * (reg_D[i][2] + reg_D[i][3]);
     }
 
     // Right now, we always force global atomics as the way to output

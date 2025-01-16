@@ -127,39 +127,39 @@ void async_gemm(
 
 
 
-void sparse_k(
-    torch::Tensor& A,
-    torch::Tensor& B,
-    torch::Tensor& D,
-    int64_t split_k
-) {
-    const int m = A.size(0);
-    const int n = B.size(1);
-    const int k = A.size(1);
+// void sparse_k(
+//     torch::Tensor& A,
+//     torch::Tensor& B,
+//     torch::Tensor& D,
+//     int64_t split_k
+// ) {
+//     const int m = A.size(0);
+//     const int n = B.size(1);
+//     const int k = A.size(1);
     
-    const fp8* __restrict__ A_ = (const fp8* __restrict__) A.data_ptr(); 
-    const fp8* __restrict__ B_ = (const fp8* __restrict__) B.data_ptr(); 
-    float* __restrict__ D_ = (float* __restrict__) D.data_ptr(); 
+//     const fp8* __restrict__ A_ = (const fp8* __restrict__) A.data_ptr(); 
+//     const fp8* __restrict__ B_ = (const fp8* __restrict__) B.data_ptr(); 
+//     float* __restrict__ D_ = (float* __restrict__) D.data_ptr(); 
 
-    // Check shapes
-    if ((m % WARPTILE_M != 0) || (k % WARPTILE_K != 0)) {
-        std::cerr << "Either m, n or k is not divisible by the corresponding WARPTILE_ :";
-        std::cerr << m << ", " << n << ", " << k << std::endl;
-        exit(1);
-    }
+//     // Check shapes
+//     if ((m % WARPTILE_M != 0) || (k % WARPTILE_K != 0)) {
+//         std::cerr << "Either m, n or k is not divisible by the corresponding WARPTILE_ :";
+//         std::cerr << m << ", " << n << ", " << k << std::endl;
+//         exit(1);
+//     }
 
-    // Prepare kernel launch
-    dim3 grid(CU, 1, 1);
+//     // Prepare kernel launch
+//     dim3 grid(CU, 1, 1);
 
-    int warps = 0;
-    warps += A_PRODUCERS;
-    warps += B_PRODUCERS;
-    warps += CONSUMERS;
-    dim3 block(warps * WARPSIZE, 1, 1);
+//     int warps = 0;
+//     warps += A_PRODUCERS;
+//     warps += B_PRODUCERS;
+//     warps += CONSUMERS;
+//     dim3 block(warps * WARPSIZE, 1, 1);
 
-    const at::cuda::OptionalCUDAGuard device_guard(device_of(A));
-    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+//     const at::cuda::OptionalCUDAGuard device_guard(device_of(A));
+//     const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-    // Launch kernel
-    _tsr_kernel<<<grid, block, 0, stream>>>(A_, B_, D_, m, n, k, split_k);
-}
+//     // Launch kernel
+//     _tsr_kernel<<<grid, block, 0, stream>>>(A_, B_, D_, m, n, k, split_k);
+// }
