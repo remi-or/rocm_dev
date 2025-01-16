@@ -38,9 +38,9 @@
 #define CONSUMERS 3
 
 #define QSIZE 18
-#define SPLIT_K 1
+#define SPLIT_K 6
 
 
 #define K_BLOCKS(k) (((k / WARPTILE_K) / SPLIT_K))
 
-#define CDIV(a, b) ((a + b - 1) / b)
+#define CDIV(a, b) ((a + b - 1) / (b))

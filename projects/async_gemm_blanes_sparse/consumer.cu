@@ -31,6 +31,9 @@ void __device__ _tsr_consumer(
     fp8* B_buffer,
     float* D,
     uint8* queue,
+    int &index,
+    uint8 &p_state,
+    int &role_id,
     const int n,
     const int k,
     const int k_blocks
@@ -40,9 +43,6 @@ void __device__ _tsr_consumer(
     A_buffer += (thread_id / 2) * E_P_BANK + (threadIdx.x % 2) * 32*E_P_BANK * 2;
     B_buffer += (thread_id % 32) * 4 + (thread_id / 32) * 32*E_P_BANK * 4;
     const int sparsity_indices = (threadIdx.x % 2) ? 0x0000EEEE : 0x00004444;
-
-    // Account for warp lane
-    const int consumer_id = (threadIdx.x / WARPSIZE) - (A_PRODUCERS + B_PRODUCERS);
 
     // Declare input registers
     fp8x8 reg_A;
@@ -56,22 +56,22 @@ void __device__ _tsr_consumer(
     }
 
     // K-wise loop
-    uint8 p_state = 1;
-    int index = consumer_id;
     fp8 *A_offs_buff, *B_offs_buff;
+    int b = role_id;
 
-    for (int b = consumer_id; b < k_blocks; b+=CONSUMERS) {
+    while (b < k_blocks) {
 
         // Account for cyclic queue
+        index -= (index >= QSIZE) ? QSIZE : 0;
         A_offs_buff = A_buffer + index * (WARPTILE_M * WARPTILE_K);
         B_offs_buff = B_buffer + index * (WARPTILE_N * WARPTILE_K);
 
         // Load A buffer
-        while (!queue[2 * B_LANES * index]) {
+        while (queue[2 * B_LANES * index] != 2) {
             asm volatile("s_sleep 0");
         }
         consumer_smem_to_reg8(A_offs_buff, reg_A);
-        queue[2 * B_LANES * index] = 0;
+        queue[2 * B_LANES * index] = p_state;
 
         #pragma unroll
         for (int lane = 0; lane < B_LANES; lane++) {
@@ -100,15 +100,28 @@ void __device__ _tsr_consumer(
         // Update index
         index += CONSUMERS;
         p_state = (index >= QSIZE) ? (!p_state) : p_state;
-        index -= (index >= QSIZE) ? QSIZE : 0;
+        b += CONSUMERS;
     }
-    __syncthreads();
-    // if (threadIdx.x == 1023) {
-    //     for (int i = 0; i < B_LANES * QSIZE; i++) {
-    //         queue[2*i+1] = 0;
+
+    // Bring warps back in order
+    role_id = b - k_blocks;
+
+    // // Bring warps back in order
+    // if (b < CONSUMERS * CDIV(k_blocks, CONSUMERS)) {
+
+    //     // Mark skipped buffers as consumed
+    //     queue[2 * B_LANES * index] = p_state;
+
+    //     #pragma unroll
+    //     for (int lane = 0; lane < B_LANES; lane++) {
+    //         queue[2 * (B_LANES * index + lane) + 1] = p_state;
     //     }
+
+    //     // Update index
+    //     index += CONSUMERS;
+    //     p_state = (index >= QSIZE) ? (!p_state) : p_state;
+    //     index -= (index >= QSIZE) ? QSIZE : 0;
     // }
-    // __syncthreads();
 
     // Fuse complementary registers
     #pragma unroll

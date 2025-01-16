@@ -25,6 +25,31 @@ void __global__ _tsr_kernel(
     const int tiles = (n / WARPTILE_N) * SPLIT_K;
     const int tpw = max(CDIV(tiles, CU), 1);
 
+    // Infer index and p-state
+    int role_id;
+    int index;
+    uint8 p_state;
+
+    // A producer warp
+    if (threadIdx.x < A_PRODUCERS * WARPSIZE) {
+        role_id = threadIdx.x / WARPSIZE;
+        index = 2 * role_id;
+        p_state = 0;
+    } 
+    // B producer warp
+    else if (threadIdx.x < A_PRODUCERS * WARPSIZE + B_PRODUCERS * WARPSIZE) {
+        role_id = (threadIdx.x / WARPSIZE) - A_PRODUCERS;
+        index = role_id;
+        p_state = 0;
+    }
+    // Consumers warp
+    else {
+        role_id = (threadIdx.x / WARPSIZE) - (A_PRODUCERS + B_PRODUCERS);
+        index = role_id;
+        p_state = 1;
+    }
+
+
     for (int warptile = (tpw * blockIdx.x); warptile < min(tiles, tpw * (blockIdx.x + 1)); warptile++) {
 
         // Compute tile position
@@ -38,6 +63,7 @@ void __global__ _tsr_kernel(
                 A + curr_k, 
                 &A_buffer[0], 
                 &queue[0],
+                index, p_state, role_id,
                 k, k_blocks
             ); 
         } 
@@ -46,7 +72,8 @@ void __global__ _tsr_kernel(
             _tsr_B_producer(
                 B + curr_n * k + curr_k,
                 &B_buffer[0],
-                &queue[0],
+                &queue[1],
+                index, p_state, role_id,
                 k, k_blocks
             ); 
         }
@@ -57,6 +84,7 @@ void __global__ _tsr_kernel(
                 &B_buffer[0],
                 D + curr_n,
                 &queue[0],
+                index, p_state, role_id,
                 n,
                 k, k_blocks
             );
@@ -124,7 +152,7 @@ void async_gemm(
 
 //     int warps = 0;
 //     warps += A_PRODUCERS;
-//     warps += B_PRODUCERS * B_LANES;
+//     warps += B_PRODUCERS;
 //     warps += CONSUMERS;
 //     dim3 block(warps * WARPSIZE, 1, 1);
 
