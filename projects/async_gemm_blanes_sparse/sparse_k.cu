@@ -1,11 +1,10 @@
 #include "./consumer.cu"
 #include "./producer.cu"
 
-template <typename out_dtype>
 void __global__ _tsr_kernel(
     const fp8* __restrict__ A, 
     const fp8* __restrict__ B,
-    out_dtype* __restrict__ D, 
+    float* __restrict__ D, 
     const int m,
     const int n,
     const int k
@@ -96,11 +95,10 @@ void __global__ _tsr_kernel(
     }    
 }
 
-template <typename out_dtype>
 void async_gemm(
     const fp8* __restrict__ A, 
     const fp8* __restrict__ B,
-    out_dtype* __restrict__ D, 
+    float* __restrict__ D, 
     const int m, 
     const int n, 
     const int k
@@ -162,5 +160,5 @@ void sparse_k(
     const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
     // Launch kernel
-    _tsr_kernel<float><<<grid, block, 0, stream>>>(A_, B_, D_, m, n, k);
+    _tsr_kernel<<<grid, block, 0, stream>>>(A_, B_, D_, m, n, k);
 }
