@@ -35,6 +35,7 @@ void __device__ _tsr_consumer(
     uint8 &p_state,
     int &role_id,
     const int n,
+    const int dropped_cols,
     const int k,
     const int k_blocks
 ) {
@@ -106,23 +107,6 @@ void __device__ _tsr_consumer(
     // Bring warps back in order
     role_id = b - k_blocks;
 
-    // // Bring warps back in order
-    // if (b < CONSUMERS * CDIV(k_blocks, CONSUMERS)) {
-
-    //     // Mark skipped buffers as consumed
-    //     queue[2 * B_LANES * index] = p_state;
-
-    //     #pragma unroll
-    //     for (int lane = 0; lane < B_LANES; lane++) {
-    //         queue[2 * (B_LANES * index + lane) + 1] = p_state;
-    //     }
-
-    //     // Update index
-    //     index += CONSUMERS;
-    //     p_state = (index >= QSIZE) ? (!p_state) : p_state;
-    //     index -= (index >= QSIZE) ? QSIZE : 0;
-    // }
-
     // Fuse complementary registers
     #pragma unroll
     for (int i = 0; i < B_LANES; i++) {
@@ -135,6 +119,12 @@ void __device__ _tsr_consumer(
     int out_n = (thread_id % 16);
     D += out_m * n + out_n;
 
+    // Account for dropped cols
+    #pragma unroll
+    for (int i = 0; i < B_LANES; i++) {
+        reg_D[i][0] = ((out_n + i * OP_N) < dropped_cols) ? 0.0f : reg_D[i][0];
+        reg_D[i][2] = ((out_n + i * OP_N) < dropped_cols) ? 0.0f : reg_D[i][2];
+    }
 
     // If there is only one consumer and no split-k, store directly in gmem
     if ((CONSUMERS == 1) && (SPLIT_K == 1)) {

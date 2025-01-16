@@ -20,10 +20,6 @@ void __global__ _tsr_kernel(
     __shared__ fp8 B_buffer[WARPTILE_N * WARPTILE_K * QSIZE];
     __syncthreads();
 
-    // Tiles loop
-    int curr_n, curr_k, k_blocks;
-    const int tiles = (n / WARPTILE_N) * SPLIT_K;
-    const int tpw = max(CDIV(tiles, CU), 1);
 
     // Infer index and p-state
     int role_id;
@@ -49,13 +45,21 @@ void __global__ _tsr_kernel(
         p_state = 1;
     }
 
+    // Tiles loop
+    int curr_n, curr_k, k_blocks, dropped_cols;
+    const int tiles = CDIV(n, WARPTILE_N) * SPLIT_K;
+    const int tpw = max(CDIV(tiles, CU), 1);
 
     for (int warptile = (tpw * blockIdx.x); warptile < min(tiles, tpw * (blockIdx.x + 1)); warptile++) {
 
         // Compute tile position
-        curr_n = (warptile % (n / WARPTILE_N)) * WARPTILE_N;
-        curr_k = (warptile / (n / WARPTILE_N)) * WARPTILE_K * K_BLOCKS(k);
-        k_blocks = ((warptile / (n / WARPTILE_N)) == (SPLIT_K - 1)) ? (k / WARPTILE_K) - (SPLIT_K - 1) * K_BLOCKS(k) : K_BLOCKS(k);
+        curr_n = (warptile % CDIV(n, WARPTILE_N)) * WARPTILE_N;
+        curr_k = (warptile / CDIV(n, WARPTILE_N)) * WARPTILE_K * K_BLOCKS(k);
+        k_blocks = ((warptile / CDIV(n, WARPTILE_N)) == (SPLIT_K - 1)) ? (k / WARPTILE_K) - (SPLIT_K - 1) * K_BLOCKS(k) : K_BLOCKS(k);
+
+        // Account for column overflow
+        dropped_cols = max(0, curr_n + WARPTILE_N - n);
+        curr_n -= dropped_cols;
 
         // A producer warp
         if (threadIdx.x < A_PRODUCERS * WARPSIZE) {
@@ -85,7 +89,7 @@ void __global__ _tsr_kernel(
                 D + curr_n,
                 &queue[0],
                 index, p_state, role_id,
-                n,
+                n, dropped_cols,
                 k, k_blocks
             );
         }
@@ -102,15 +106,13 @@ void async_gemm(
     const int k
 ) {
     // Check shapes
-    if ((m % WARPTILE_M != 0) || (n % WARPTILE_N != 0) || (k % WARPTILE_K != 0)) {
+    if ((m % WARPTILE_M != 0) || (k % WARPTILE_K != 0)) {
         std::cerr << "Either m, n or k is not divisible by the corresponding WARPTILE_ :";
         std::cerr << m << ", " << n << ", " << k << std::endl;
         exit(1);
     }
 
     // Prepare kernel launch
-    const int grid_m = m / WARPTILE_M;
-    const int grid_n = n / WARPTILE_N;
     dim3 grid(CU, 1, 1);
 
     int warps = 0;
@@ -126,39 +128,39 @@ void async_gemm(
 
 
 
-// void sparse_k(
-//     torch::Tensor& A,
-//     torch::Tensor& B,
-//     torch::Tensor& D,
-//     int64_t W
-// ) {
-//     const int m = A.size(0);
-//     const int n = B.size(1);
-//     const int k = A.size(1);
+void sparse_k(
+    torch::Tensor& A,
+    torch::Tensor& B,
+    torch::Tensor& D,
+    int64_t W
+) {
+    const int m = A.size(0);
+    const int n = B.size(1);
+    const int k = A.size(1);
     
-//     const fp8* __restrict__ A_ = (const fp8* __restrict__) A.data_ptr(); 
-//     const fp8* __restrict__ B_ = (const fp8* __restrict__) B.data_ptr(); 
-//     float* __restrict__ D_ = (float* __restrict__) D.data_ptr(); 
+    const fp8* __restrict__ A_ = (const fp8* __restrict__) A.data_ptr(); 
+    const fp8* __restrict__ B_ = (const fp8* __restrict__) B.data_ptr(); 
+    float* __restrict__ D_ = (float* __restrict__) D.data_ptr(); 
 
-//         // Check shapes
-//     if ((m % WARPTILE_M != 0) || (n % WARPTILE_N != 0) || (k % WARPTILE_K != 0)) {
-//         std::cerr << "Either m, n or k is not divisible by the corresponding WARPTILE_ :";
-//         std::cerr << m << ", " << n << ", " << k << std::endl;
-//         exit(1);
-//     }
+    // Check shapes
+    if ((m % WARPTILE_M != 0) || (k % WARPTILE_K != 0)) {
+        std::cerr << "Either m, n or k is not divisible by the corresponding WARPTILE_ :";
+        std::cerr << m << ", " << n << ", " << k << std::endl;
+        exit(1);
+    }
 
-//     // Prepare kernel launch
-//     dim3 grid(CU, 1, 1);
+    // Prepare kernel launch
+    dim3 grid(CU, 1, 1);
 
-//     int warps = 0;
-//     warps += A_PRODUCERS;
-//     warps += B_PRODUCERS;
-//     warps += CONSUMERS;
-//     dim3 block(warps * WARPSIZE, 1, 1);
+    int warps = 0;
+    warps += A_PRODUCERS;
+    warps += B_PRODUCERS;
+    warps += CONSUMERS;
+    dim3 block(warps * WARPSIZE, 1, 1);
 
-//     const at::cuda::OptionalCUDAGuard device_guard(device_of(A));
-//     const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(A));
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-//     // Launch kernel
-//     _tsr_kernel<float><<<grid, block, 0, stream>>>(A_, B_, D_, m, n, k);
-// }
+    // Launch kernel
+    _tsr_kernel<float><<<grid, block, 0, stream>>>(A_, B_, D_, m, n, k);
+}
