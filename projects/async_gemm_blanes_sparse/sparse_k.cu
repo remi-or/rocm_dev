@@ -7,7 +7,8 @@ void __global__ _tsr_kernel(
     float* __restrict__ D, 
     const int m,
     const int n,
-    const int k
+    const int k,
+    const int split_k
 ) {
     // Initialize shared queue
     __shared__ uint8 queue[2 * B_LANES * QSIZE];
@@ -46,15 +47,15 @@ void __global__ _tsr_kernel(
 
     // Tiles loop
     int curr_n, curr_k, k_blocks, dropped_cols;
-    const int tiles = CDIV(n, WARPTILE_N) * SPLIT_K;
+    const int tiles = CDIV(n, WARPTILE_N) * split_k;
     const int tpw = max(CDIV(tiles, CU), 1);
 
     for (int warptile = (tpw * blockIdx.x); warptile < min(tiles, tpw * (blockIdx.x + 1)); warptile++) {
 
         // Compute tile position
         curr_n = (warptile % CDIV(n, WARPTILE_N)) * WARPTILE_N;
-        curr_k = (warptile / CDIV(n, WARPTILE_N)) * WARPTILE_K * K_BLOCKS(k);
-        k_blocks = ((warptile / CDIV(n, WARPTILE_N)) == (SPLIT_K - 1)) ? (k / WARPTILE_K) - (SPLIT_K - 1) * K_BLOCKS(k) : K_BLOCKS(k);
+        curr_k = (warptile / CDIV(n, WARPTILE_N)) * WARPTILE_K * K_BLOCKS(k, split_k);
+        k_blocks = ((warptile / CDIV(n, WARPTILE_N)) == (split_k - 1)) ? (k / WARPTILE_K) - (split_k - 1) * K_BLOCKS(k, split_k) : K_BLOCKS(k, split_k);
 
         // Account for column overflow
         dropped_cols = max(0, curr_n + WARPTILE_N - n);
@@ -120,7 +121,7 @@ void async_gemm(
     dim3 block(warps * WARPSIZE, 1, 1);
 
     // Launch kernel
-    _tsr_kernel<<<grid, block, 0, 0>>>(A, B, D, m, n, k);
+    _tsr_kernel<<<grid, block, 0, 0>>>(A, B, D, m, n, k, SK);
 }
 
 
@@ -130,7 +131,7 @@ void sparse_k(
     torch::Tensor& A,
     torch::Tensor& B,
     torch::Tensor& D,
-    int64_t W
+    int64_t split_k
 ) {
     const int m = A.size(0);
     const int n = B.size(1);
@@ -160,5 +161,5 @@ void sparse_k(
     const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
     // Launch kernel
-    _tsr_kernel<<<grid, block, 0, stream>>>(A_, B_, D_, m, n, k);
+    _tsr_kernel<<<grid, block, 0, stream>>>(A_, B_, D_, m, n, k, split_k);
 }
