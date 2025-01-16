@@ -31,7 +31,6 @@
 #define WARPTILE_M OP_M
 #define WARPTILE_N (OP_N * B_LANES)
 #define WARPTILE_K OP_K
-#define G_ATOMICS true
 
 #define A_PRODUCERS 2
 #define B_PRODUCERS 11

@@ -126,17 +126,24 @@ void __device__ _tsr_consumer(
         reg_D[i][2] = ((out_n + i * OP_N) < dropped_cols) ? 0.0f : reg_D[i][2];
     }
 
-    // If there is only one consumer and no split-k, store directly in gmem
-    if ((CONSUMERS == 1) && (SPLIT_K == 1)) {
-        #pragma unroll
-        for (int i = 0; i < B_LANES; i++) {
-            D[    i*OP_N] = reg_D[i][0];
-            D[n + i*OP_N] = reg_D[i][2];
-        }
+    // Right now, we always force global atomics as the way to output
+    #pragma unroll
+    for (int i = 0; i < B_LANES; i++) {
+        atomicAdd(&D[0 + i*OP_N], reg_D[i][0]);
+        atomicAdd(&D[n + i*OP_N], reg_D[i][2]);
     }
 
+    // // If there is only one consumer and no split-k, store directly in gmem
+    // if ((CONSUMERS == 1) && (SPLIT_K == 1)) {
+    //     #pragma unroll
+    //     for (int i = 0; i < B_LANES; i++) {
+    //         D[    i*OP_N] = reg_D[i][0];
+    //         D[n + i*OP_N] = reg_D[i][2];
+    //     }
+    // }
+
     // Otherwise, use global atomics
-    else if (G_ATOMICS) {
+    // else if (G_ATOMICS) {
 
         // Initialize if there is no split-k (otherwise, initializtion is assumed)
         // if (SPLIT_K == 1) {
@@ -152,13 +159,13 @@ void __device__ _tsr_consumer(
 
         // Accumulate
         // if (consumer_id > (1 - SPLIT_K)) {
-        #pragma unroll
-        for (int i = 0; i < B_LANES; i++) {
-            atomicAdd(&D[0 + i*OP_N], reg_D[i][0]);
-            atomicAdd(&D[n + i*OP_N], reg_D[i][2]);
-        }
+        // #pragma unroll
+        // for (int i = 0; i < B_LANES; i++) {
+        //     atomicAdd(&D[0 + i*OP_N], reg_D[i][0]);
+        //     atomicAdd(&D[n + i*OP_N], reg_D[i][2]);
         // }
-    }
+        // }
+    // }
 
     // // Or shared buffer
     // else {
