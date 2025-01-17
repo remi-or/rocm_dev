@@ -113,12 +113,12 @@ void __device__ _tsr_consumer(
     D += out_m * n + out_n;
 
     // Fuse complementary registers
-    bool dropped;
+    bool kept;
     #pragma unroll
     for (int i = 0; i < B_LANES; i++) {
-        dropped = (out_n + i * OP_N) < dropped_cols;
-        reg_D[i][0] = (dropped) * (reg_D[i][0] + reg_D[i][1]);
-        reg_D[i][2] = (dropped) * (reg_D[i][2] + reg_D[i][3]);
+        kept = (out_n + i * OP_N) >= dropped_cols;
+        reg_D[i][0] = (kept) * (reg_D[i][0] + reg_D[i][1]);
+        reg_D[i][2] = (kept) * (reg_D[i][2] + reg_D[i][3]);
     }
 
     // Right now, we always force global atomics as the way to output

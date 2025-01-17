@@ -66,7 +66,7 @@ int main(int argc, char **argv) {
     zero_device_tensor<OUTD>(dD, m * n);
 
     HIP_CHECK( hipDeviceSynchronize() );
-    async_gemm<OUTD>(dA, dB, dD, m, n, k);
+    async_gemm(dA, dB, dD, m, n, k);
     HIP_CHECK( hipDeviceSynchronize() );
 
     // Transfer result and free device tensors
