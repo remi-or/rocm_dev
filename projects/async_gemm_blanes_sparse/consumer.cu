@@ -26,6 +26,22 @@ void inline __device__ consumer_smem_to_reg16(fp8* buffer, fp8x16 &reg)
     for (int i = 0; i < 4; i++) { reg[i + 12] = buffer[i + 3 * 32*E_P_BANK]; }
 }
 
+template <typename T>
+void __device__ _tsr_consumer(
+    fp8* A_buffer,
+    fp8* B_buffer,
+    T* D,
+    uint8* queue,
+    int &index,
+    uint8 &p_state,
+    int &role_id,
+    const int n,
+    const int dropped_cols,
+    const int k,
+    const int k_blocks
+);
+
+template <>
 void __device__ _tsr_consumer(
     fp8* A_buffer,
     fp8* B_buffer,
@@ -117,63 +133,161 @@ void __device__ _tsr_consumer(
     // Bring warps back in order
     role_id = b - k_blocks;
 
-    // Relocate on D
-    int out_m = (thread_id / 16) * 2;
-    int out_n = (thread_id % 16);
-    D += out_m * n + out_n;
-
     // Fuse complementary registers
+    int out_n = 2 * ((thread_id % 16) / 2);
     bool kept;
     #pragma unroll
     for (int i = 0; i < B_LANES; i++) {
         kept = (out_n + i * OP_N) >= dropped_cols;
         reg_D[i][0] = (kept) * (reg_D[i][0] + reg_D[i][1]);
-        reg_D[i][2] = (kept) * (reg_D[i][2] + reg_D[i][3]);
+        reg_D[i][1] = (kept) * (reg_D[i][2] + reg_D[i][3]);
     }
 
-    // Right now, we always force global atomics as the way to output
+    // Relocate on D
+    int out_m = (thread_id / 16) * 2 + (thread_id % 2);
+    D += (out_m * n + out_n);
+
+    // Out lane by lane
+    int id_to_swap = 1 - threadIdx.x % 2;
+    int src_lane = thread_id + 1 - 2 * (thread_id % 2);
+    __half2 x;
+    for (int i = 0; i < B_LANES; i++) {
+
+        // Swap registers across the warp
+        reg_D[i][id_to_swap] = __shfl(
+            reg_D[i][id_to_swap], 
+            src_lane
+        );
+        
+        atomicAdd(&D[0 + i*OP_N], reg_D[i][0]);
+        atomicAdd(&D[1 + i*OP_N], reg_D[i][1]);
+    }
+}
+
+template <>
+void __device__ _tsr_consumer(
+    fp8* A_buffer,
+    fp8* B_buffer,
+    half* D,
+    uint8* queue,
+    int &index,
+    uint8 &p_state,
+    int &role_id,
+    const int n,
+    const int dropped_cols,
+    const int k,
+    const int k_blocks
+) {
+    // Compute thread position
+    const int thread_id = threadIdx.x % WARPSIZE;
+    A_buffer += (thread_id / 2) * E_P_BANK + (threadIdx.x % 2) * 32*E_P_BANK * 2;
+    B_buffer += (thread_id % 32) * 4 + (thread_id / 32) * 32*E_P_BANK * 4;
+    const int sparsity_indices = (threadIdx.x % 2) ? 0x0000EEEE : 0x00004444;
+
+    // Declare input registers
+    fp8x8 reg_A[OPS];
+    fp8x16 reg_B[OPS];
+
+    // Initialize output registers
+    f32x4 reg_D[B_LANES];
+    #pragma unroll
+    for (int i = 0; i < (B_LANES); i++) {
+        reg_D[i][0] = 0.0f; reg_D[i][1] = 0.0f; reg_D[i][2] = 0.0f; reg_D[i][3] = 0.0f;
+    }
+
+    // K-wise loop
+    fp8 *A_offs_buff, *B_offs_buff;
+    int b = role_id;
+
+    while (b < k_blocks) {
+
+        // Account for cyclic queue
+        index -= (index >= QSIZE) ? QSIZE : 0;
+        A_offs_buff = A_buffer + index * (WARPTILE_M * WARPTILE_K);
+        B_offs_buff = B_buffer + index * (WARPTILE_N * WARPTILE_K);
+
+        // Wait for A buffer to be filled
+        while (queue[2 * B_LANES * index] != 3 - p_state) {
+            asm volatile("s_sleep 0");
+        }
+        // Load A buffer
+        #pragma unroll
+        for (int op = 0; op < OPS; op++) {
+            consumer_smem_to_reg8(A_offs_buff + (op * OP_M * OP_K), reg_A[op]);
+        }
+        // Mark A buffer as consumed
+        queue[2 * B_LANES * index] = p_state;
+
+        // Go through each lanes
+        #pragma unroll
+        for (int lane = 0; lane < B_LANES; lane++) {
+
+            // Wait for B buffer to be filled
+            while (queue[2 * (B_LANES * index + lane) + 1] != 3 - p_state) {
+                asm volatile("s_sleep 0");
+            }
+            // Load B buffer
+            #pragma unroll
+            for (int op = 0; op < OPS; op++) {
+                consumer_smem_to_reg16(B_offs_buff + (lane * OP_N * WARPTILE_K) + (op * OP_N * OP_K), reg_B[op]);
+            }
+            // Mark B buffer as consumed
+            queue[2 * (B_LANES * index + lane) + 1] = p_state;
+
+            // Consume registers
+            #pragma unroll
+            for (int op = 0; op < OPS; op++) {
+                reg_D[lane] = __builtin_amdgcn_smfmac_f32_16x16x64_fp8_fp8(
+                    reinterpret_cast<fp8_4x2>(reg_A[op]),
+                    reinterpret_cast<fp8_4x4>(reg_B[op]),
+                    reg_D[lane], 
+                    sparsity_indices, // src2
+                    7, 1 // cbsz, abid
+                );
+            }
+        }
+
+        // Update index
+        index += CONSUMERS;
+        p_state = (index >= QSIZE) ? (!p_state) : p_state;
+        b += CONSUMERS;
+    }
+
+    // Bring warps back in order
+    role_id = b - k_blocks;
+
+    // Fuse complementary registers
+    int out_n = 2 * ((thread_id % 16) / 2);
+    bool kept;
     #pragma unroll
     for (int i = 0; i < B_LANES; i++) {
-        atomicAdd(&D[0 + i*OP_N], reg_D[i][0]);
-        atomicAdd(&D[n + i*OP_N], reg_D[i][2]);
+        kept = (out_n + i * OP_N) >= dropped_cols;
+        reg_D[i][0] = (kept) * (reg_D[i][0] + reg_D[i][1]);
+        reg_D[i][1] = (kept) * (reg_D[i][2] + reg_D[i][3]);
     }
 
-    // // If there is only one consumer and no split-k, store directly in gmem
-    // if ((CONSUMERS == 1) && (SPLIT_K == 1)) {
-    //     #pragma unroll
-    //     for (int i = 0; i < B_LANES; i++) {
-    //         D[    i*OP_N] = reg_D[i][0];
-    //         D[n + i*OP_N] = reg_D[i][2];
-    //     }
-    // }
+    // Relocate on D
+    int out_m = (thread_id / 16) * 2 + (thread_id % 2);
+    __half2* D_ = reinterpret_cast<__half2*>(D) + (out_m * n + out_n) / 2;
 
-    // Otherwise, use global atomics
-    // else if (G_ATOMICS) {
+    // Out lane by lane
+    int id_to_swap = 1 - threadIdx.x % 2;
+    int src_lane = thread_id + 1 - 2 * (thread_id % 2);
+    __half2 x;
+    for (int i = 0; i < B_LANES; i++) {
 
-        // Initialize if there is no split-k (otherwise, initializtion is assumed)
-        // if (SPLIT_K == 1) {
-        //     if (consumer_id == 0) {
-        //         #pragma unroll
-        //         for (int i = 0; i < (TIED_CONSUMER ? 1 : B_LANES); i++) {
-        //             D[0 + i*OP_N] = reg_D[i][0];
-        //             D[n + i*OP_N] = reg_D[i][2];
-        //         }
-        //     }
-        //     __syncthreads();
-        // }
+        // Swap registers across the warp
+        reg_D[i][id_to_swap] = __shfl(
+            reg_D[i][id_to_swap], 
+            src_lane
+        );
+        
+        // Form the packed f16
+        x.x = reg_D[i][0];
+        x.y = reg_D[i][1];
 
-        // Accumulate
-        // if (consumer_id > (1 - SPLIT_K)) {
-        // #pragma unroll
-        // for (int i = 0; i < B_LANES; i++) {
-        //     atomicAdd(&D[0 + i*OP_N], reg_D[i][0]);
-        //     atomicAdd(&D[n + i*OP_N], reg_D[i][2]);
-        // }
-        // }
-    // }
-
-    // // Or shared buffer
-    // else {
-    //     // WIP
-    // }
+        asm volatile(
+            "global_atomic_pk_add_f16 %0, %1, off\n\t" : : "v"(&D_[i * OP_N / 2]), "v"(x)
+        );
+    }
 }

@@ -85,7 +85,7 @@ int main(int argc, char **argv) {
         delta = abs((float) host_result[k] - (float) host_ref[k]);
         sum_delta += delta;
         max_delta = (delta > max_delta) ? delta : max_delta;
-        // std::cout << host_ref[k] << ":" << host_result[k] << ", ";
+        // std::cout << (float) host_ref[k] << ":" << (float) host_result[k] << ", ";
     }
     std::cout << "{\"max_delta\": " << max_delta << ", \"total_delta\": " << sum_delta << "}";
 

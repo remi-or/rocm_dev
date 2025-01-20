@@ -1,10 +1,11 @@
 #include "./consumer.cu"
 #include "./producer.cu"
 
+template <typename T>
 void __global__ _tsr_kernel(
     const fp8* __restrict__ A, 
     const fp8* __restrict__ B,
-    float* __restrict__ D, 
+    T* __restrict__ D, 
     const int m,
     const int n,
     const int k,
@@ -84,7 +85,7 @@ void __global__ _tsr_kernel(
         }
         // Consumers warp
         else {
-            _tsr_consumer(
+            _tsr_consumer<T>(
                 &A_buffer[0],
                 &B_buffer[0],
                 D + curr_n,
@@ -97,10 +98,11 @@ void __global__ _tsr_kernel(
     }    
 }
 
+template <typename T>
 void async_gemm(
     const fp8* __restrict__ A, 
     const fp8* __restrict__ B,
-    float* __restrict__ D, 
+    T* __restrict__ D, 
     const int m, 
     const int n, 
     const int k
@@ -122,7 +124,7 @@ void async_gemm(
     dim3 block(warps * WARPSIZE, 1, 1);
 
     // Launch kernel
-    _tsr_kernel<<<grid, block, 0, 0>>>(A, B, D, m, n, k, SK);
+    _tsr_kernel<T><<<grid, block, 0, 0>>>(A, B, D, m, n, k, SK);
 }
 
 
@@ -140,7 +142,7 @@ void async_gemm(
     
 //     const fp8* __restrict__ A_ = (const fp8* __restrict__) A.data_ptr(); 
 //     const fp8* __restrict__ B_ = (const fp8* __restrict__) B.data_ptr(); 
-//     float* __restrict__ D_ = (float* __restrict__) D.data_ptr(); 
+//     half* __restrict__ D_ = (half* __restrict__) D.data_ptr(); 
 
 //     // Check shapes
 //     if ((m % WARPTILE_M != 0) || (k % WARPTILE_K != 0)) {
