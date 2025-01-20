@@ -29,7 +29,7 @@ void __global__ _tsr_kernel(
     // A producer warp
     if (threadIdx.x < A_PRODUCERS * WARPSIZE) {
         role_id = threadIdx.x / WARPSIZE;
-        index = 2 * role_id;
+        index = role_id;
         p_state = 0;
     } 
     // B producer warp

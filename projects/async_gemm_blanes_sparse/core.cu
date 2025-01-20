@@ -27,16 +27,17 @@
 #define CU 304
 
 #define B_LANES 3
+#define OPS 2
 
 #define WARPTILE_M OP_M
 #define WARPTILE_N (OP_N * B_LANES)
-#define WARPTILE_K OP_K
+#define WARPTILE_K (OP_K * OPS)
 
 #define A_PRODUCERS 2
 #define B_PRODUCERS 11
 #define CONSUMERS 3
 
-#define QSIZE 18
+#define QSIZE 9
 #define SK 1
 
 

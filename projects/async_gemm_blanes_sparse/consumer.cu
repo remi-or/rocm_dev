@@ -1,6 +1,6 @@
 #include "./core.cu"
 
-void inline __device__ consumer_smem_to_reg8(fp8* &buffer, fp8x8 &reg) 
+void inline __device__ consumer_smem_to_reg8(fp8* buffer, fp8x8 &reg) 
 {
     // 32 bits load from the current bank
     #pragma unroll
@@ -14,7 +14,7 @@ void inline __device__ consumer_smem_to_reg8(fp8* &buffer, fp8x8 &reg)
     }
 }
 
-void inline __device__ consumer_smem_to_reg16(fp8* &buffer, fp8x16 &reg) 
+void inline __device__ consumer_smem_to_reg16(fp8* buffer, fp8x16 &reg) 
 {
     #pragma unroll
     for (int i = 0; i < 4; i++) { reg[i     ] = buffer[i                   ]; }
@@ -46,8 +46,8 @@ void __device__ _tsr_consumer(
     const int sparsity_indices = (threadIdx.x % 2) ? 0x0000EEEE : 0x00004444;
 
     // Declare input registers
-    fp8x8 reg_A;
-    fp8x16 reg_B;
+    fp8x8 reg_A[OPS];
+    fp8x16 reg_B[OPS];
 
     // Initialize output registers
     f32x4 reg_D[B_LANES];
@@ -67,35 +67,45 @@ void __device__ _tsr_consumer(
         A_offs_buff = A_buffer + index * (WARPTILE_M * WARPTILE_K);
         B_offs_buff = B_buffer + index * (WARPTILE_N * WARPTILE_K);
 
-        // Load A buffer
+        // Wait for A buffer to be filled
         while (queue[2 * B_LANES * index] != 2) {
             asm volatile("s_sleep 0");
         }
-        consumer_smem_to_reg8(A_offs_buff, reg_A);
+        // Load A buffer
+        #pragma unroll
+        for (int op = 0; op < OPS; op++) {
+            consumer_smem_to_reg8(A_offs_buff + (op * OP_M * OP_K), reg_A[op]);
+        }
+        // Mark A buffer as consumed
         queue[2 * B_LANES * index] = p_state;
 
+        // Go through each lanes
         #pragma unroll
         for (int lane = 0; lane < B_LANES; lane++) {
 
-            // Wait for buffer to be filled
+            // Wait for B buffer to be filled
             while (queue[2 * (B_LANES * index + lane) + 1] != 2) {
                 asm volatile("s_sleep 0");
             }
-
-            // Consume
-            consumer_smem_to_reg16(B_offs_buff, reg_B);
-            // Mark buffer as consumed
+            // Load B buffer
+            #pragma unroll
+            for (int op = 0; op < OPS; op++) {
+                consumer_smem_to_reg16(B_offs_buff + (lane * OP_N * WARPTILE_K) + (op * OP_N * OP_K), reg_B[op]);
+            }
+            // Mark B buffer as consumed
             queue[2 * (B_LANES * index + lane) + 1] = p_state;
 
-            reg_D[lane] = __builtin_amdgcn_smfmac_f32_16x16x64_fp8_fp8(
-                reinterpret_cast<fp8_4x2>(reg_A),
-                reinterpret_cast<fp8_4x4>(reg_B),
-                reg_D[lane], 
-                sparsity_indices, // src2
-                7, 1 // cbsz, abid
-            );
-
-            B_offs_buff += OP_N * OP_K;
+            // Consume registers
+            #pragma unroll
+            for (int op = 0; op < OPS; op++) {
+                reg_D[lane] = __builtin_amdgcn_smfmac_f32_16x16x64_fp8_fp8(
+                    reinterpret_cast<fp8_4x2>(reg_A[op]),
+                    reinterpret_cast<fp8_4x4>(reg_B[op]),
+                    reg_D[lane], 
+                    sparsity_indices, // src2
+                    7, 1 // cbsz, abid
+                );
+            }
         }
 
         // Update index
