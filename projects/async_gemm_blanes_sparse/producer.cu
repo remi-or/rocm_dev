@@ -63,7 +63,7 @@ void __device__ _tsr_A_producer(
             }
         }
         // Mark buffer as filled
-        queue[2 * B_LANES * index] = 2;
+        queue[2 * B_LANES * index] = 2 + p_state;
 
 #if OPS == 1
         // Second buffer //
@@ -85,7 +85,7 @@ void __device__ _tsr_A_producer(
             }
         }
         // Mark buffer as filled
-        queue[2 * B_LANES * index] = 2;
+        queue[2 * B_LANES * index] = 2 + p_state;
         // Update index
         index += 2*A_PRODUCERS - 1;
         p_state = (index >= QSIZE) ? (!p_state) : p_state;
@@ -175,7 +175,7 @@ void __device__ _tsr_B_producer(
         }
 
         // Mark buffer as filled
-        queue[2 * index] = 2;
+        queue[2 * index] = 2 + p_state;
 
         // Update index
         index += B_PRODUCERS;

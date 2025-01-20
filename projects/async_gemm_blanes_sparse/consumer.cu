@@ -68,7 +68,7 @@ void __device__ _tsr_consumer(
         B_offs_buff = B_buffer + index * (WARPTILE_N * WARPTILE_K);
 
         // Wait for A buffer to be filled
-        while (queue[2 * B_LANES * index] != 2) {
+        while (queue[2 * B_LANES * index] != 3 - p_state) {
             asm volatile("s_sleep 0");
         }
         // Load A buffer
@@ -84,7 +84,7 @@ void __device__ _tsr_consumer(
         for (int lane = 0; lane < B_LANES; lane++) {
 
             // Wait for B buffer to be filled
-            while (queue[2 * (B_LANES * index + lane) + 1] != 2) {
+            while (queue[2 * (B_LANES * index + lane) + 1] != 3 - p_state) {
                 asm volatile("s_sleep 0");
             }
             // Load B buffer
