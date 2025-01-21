@@ -35,7 +35,7 @@ int main(int argc, char **argv) {
         // Create tensors
         tensor_h2d<fp8>(hA, dA, m * k);
         tensor_h2d<fp8>(hB, dB, k * n);
-        empty_device_tensor<OUTD>(D, m * n);
+        zero_device_tensor<OUTD>(D, m * n);
         // Flush cache 
         flush_device_cache();
         // Sync
