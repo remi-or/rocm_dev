@@ -2,7 +2,7 @@
 #include "./sparse_k.cu"
 
 #define STACK 10
-#define OUTD float
+#define OUTD half
 
 int main(int argc, char **argv) {
     HIP_CHECK( hipSetDevice(0) );
