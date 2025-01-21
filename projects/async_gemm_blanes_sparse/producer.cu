@@ -40,32 +40,48 @@ void __device__ _tsr_A_producer(
         index -= (index >= QSIZE) ? QSIZE : 0;
         buf = buffer + index * (WARPTILE_M * WARPTILE_K);
 
-        // Load from gmem to reg
         #pragma unroll
-        for (int i = 0; i < elems_per_thread; i++) {
-            reg[i] = src[i];
-        }
-        // Advance
-        src += WARPTILE_K * (OPS == 1 ? 2 : 1) * A_PRODUCERS;
+        for (int op = 0; op < OPS; op+=2) {
 
-        // Wait for buffer to be consumed
-        while (queue[2 * B_LANES * index] != p_state) {
-            asm volatile("s_sleep 0");
-        }
-        // Store in smem from reg
-        if ((OPS != 1) || (threadIdx.x % 8 < 4)) {
+            // Load from gmem to reg
             #pragma unroll
-            for (int line = 0; line < 4; line++) {
-                #pragma unroll
-                for (int j = 0; j < 4; j++){
-                    buf[line * 32*E_P_BANK + j] = reg[8*(line%2) + 2*(line/2) + j + 2*(j/2)];
+            for (int i = 0; i < elems_per_thread; i++) {
+                reg[i] = src[i];
+            }
+            // Advance
+            src += 2 * OP_K;
+
+            if (op == 0) {
+                // Wait for buffer to be consumed
+                while (queue[2 * B_LANES * index] != p_state) {
+                    asm volatile("s_sleep 0");
                 }
             }
+
+            // Store in smem from reg
+            if ((OPS % 2 == 0) || (op != OPS - 1) || (threadIdx.x % 8 < 4)) {
+                #pragma unroll
+                for (int line = 0; line < 4; line++) {
+                    #pragma unroll
+                    for (int j = 0; j < 4; j++){
+                        buf[line * 32*E_P_BANK + j] = reg[8*(line%2) + 2*(line/2) + j + 2*(j/2)];
+                    }
+                }
+            }
+            buf += (OPS == 1 ? 0 : 2 * OP_K * OP_M);
         }
         // Mark buffer as filled
         queue[2 * B_LANES * index] = 2 + p_state;
 
-#if OPS == 1
+#if OPS > 1
+        // Advance
+        src += WARPTILE_K * (A_PRODUCERS - 1) - (OPS % 2 == 1 ? OP_K : 0);
+
+        // Update index
+        index += A_PRODUCERS;
+        p_state = (index >= QSIZE) ? (!p_state) : p_state;
+        b += A_PRODUCERS;
+#else
         // Second buffer //
 
         // Update index
@@ -86,20 +102,19 @@ void __device__ _tsr_A_producer(
         }
         // Mark buffer as filled
         queue[2 * B_LANES * index] = 2 + p_state;
+
+        // Advance
+        src += 2 * OP_K * (A_PRODUCERS - 1);
+
         // Update index
         index += 2*A_PRODUCERS - 1;
         p_state = (index >= QSIZE) ? (!p_state) : p_state;
         b += 2*A_PRODUCERS;
-#else
-        // Update index
-        index += A_PRODUCERS;
-        p_state = (index >= QSIZE) ? (!p_state) : p_state;
-        b += A_PRODUCERS;
 #endif
     }
 
     // Bring warps back in order
-    role_id = (b - k_blocks); // WARNING: not sure about this (and it's late)
+    role_id = (b - k_blocks) / (OPS == 1 ? 2 : 1); // WARNING: not sure about this (and it's late)
 }
 
 void __device__ _tsr_B_producer(
@@ -145,7 +160,7 @@ void __device__ _tsr_B_producer(
         buf = buffer + index * (OP_N * WARPTILE_K);
 
         #pragma unroll
-        for (int op = 0; op < 2; op++) {
+        for (int op = 0; op < OPS; op++) {
 
             // Load from gmem to reg
             asm volatile("global_load_dwordx4 %0, %1, off\n\t" : "=v"(reg) : "v"(src));
