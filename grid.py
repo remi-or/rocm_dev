@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import itertools
+import random
 
 from project_class import Project
 
@@ -79,19 +80,23 @@ if __name__ == "__main__":
 
     # Rewrite core
     substitutions = {
-        "B_LANES": [3, 4, 5, 6], # [2, 3, 4, 5, 6],
+        "B_LANES": [4, 5],
         "OPS": [2, 4],
-        "A_PRODUCERS": [2, 3, 4],
+        "A_PRODUCERS": [1, 2],
         "B_PRODUCERS": [8, 9, 10, 11, 12],
-        "CONSUMERS": [2, 3, 4],
-        "QSIZE": [2, 3, 4, 6, 8, 9, 12],
-        "SK": [2, 3, 4, 6, 8],
+        "CONSUMERS": [1, 2, 3],
+        "QSIZE": [2, 3, 4],
+        "SK": [1, 2, 4, 8],
     }
 
     curr = -1
     best = 1000000000000000
     best_params = {}
     best_idx = -1
+
+    hash = (sum([sum(v) * len(k) for k, v in substitutions.items()]) % 10000) * 1000 + random.randint(0, 999)
+    log = open(f"tmp_{hash}.txt", "w")
+    log.write(f"{substitutions = }\n\n")
 
     for values in itertools.product(*substitutions.values()):
         curr += 1
@@ -117,8 +122,9 @@ if __name__ == "__main__":
             skip = True
 
         # Maybe skip
-        print(f"{curr} - {params}", end="")
-        print((": SKIPPED" if skip else "") + f" (best = {best} at {best_idx})")
+        msg = f"{curr} - {params}: " + ("SKIPPED" if skip else "") + f"\t\t(best = {best:.2f} at {best_idx})"
+        log.write(msg + "\n")
+        print(msg)
         if skip:
             continue
 
@@ -137,9 +143,12 @@ if __name__ == "__main__":
             project=project, 
             skip_test=True, 
             verbose=True,
-            timeout=10,
+            timeout=15,
         )
         print()
+        log.write(f"{data}\n")
+        log.close()
+        log = open(f"tmp_{hash}.txt", "a")
 
         # Memoize best
         if data["mean"] and data["mean"] < best:
@@ -148,20 +157,11 @@ if __name__ == "__main__":
             best_params = params
             print("-" * 80, f"NEW BEST: {best}", "-" * 80, sep="\n")
 
-    # Print best 
-    print(f"{best = }")
-    print(f"{best_params = }")
+    # Output best 
+    log.write(f"{best = }\n{best_params = }")
+    print(f"{best = }\n{best_params = }")
         
     # Write back original core
     with open(core_file, "w") as file:
         for line in original_core:
             file.write(line)        
-    
-
-    
-
-# {'B_LANES': 2, 'OPS': 4, 'A_PRODUCERS': 2, 'B_PRODUCERS': 12, 'CONSUMERS': 2, 'QSIZE': 6, 'SK': 2}
-# NEW BEST: 27.452608857142856
-
-# {'B_LANES': 3, 'OPS': 2, 'A_PRODUCERS': 2, 'B_PRODUCERS': 8, 'CONSUMERS': 2, 'QSIZE': 3, 'SK': 2}
-# NEW BEST: 27.577981428571427

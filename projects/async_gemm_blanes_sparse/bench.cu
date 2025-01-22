@@ -1,14 +1,14 @@
 #include "./../common.cuh"
 #include "./sparse_k.cu"
 
-#define STACK 10
+#define STACK 1
 #define OUTD half
 
 int main(int argc, char **argv) {
     HIP_CHECK( hipSetDevice(0) );
 
     // Parameters
-    const int iterations = 3500 / STACK;
+    const int iterations = 2000 / STACK;
     const int warmups = 500 / STACK;
 
     assert(argc==4);
@@ -17,14 +17,17 @@ int main(int argc, char **argv) {
     const int k = atoi(argv[3]);
 
     // Tensors
-    fp8 *hA; fp8* dA, *hB, *dB;
+    fp8 *hA, *dA, *hB, *dB;
+    OUTD *D;
+
     random_host_tensor<fp8>(hA, m * k);
     random_host_tensor<fp8>(hB, k * n);
-    OUTD *D;
+
     // Events 
     hipEvent_t start, stop;
     HIP_CHECK(hipEventCreate(&start));
     HIP_CHECK(hipEventCreate(&stop));
+
     // Timer
     float t;
     float total_time = 0.0f;
