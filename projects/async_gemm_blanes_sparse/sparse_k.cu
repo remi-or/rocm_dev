@@ -43,7 +43,7 @@ void __global__ _tsr_kernel(
     else {
         role_id = (threadIdx.x / WARPSIZE) - (A_PRODUCERS + B_PRODUCERS);
         index = role_id;
-        p_state = 1;
+        p_state = 4;
     }
 
     // Tiles loop

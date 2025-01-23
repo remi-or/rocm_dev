@@ -84,7 +84,7 @@ void __device__ _tsr_consumer(
         B_offs_buff = B_buffer + index * (WARPTILE_N * WARPTILE_K);
 
         // Wait for A buffer to be filled
-        while (queue[2 * B_LANES * index] != 3 - p_state) {
+        while (queue[2 * B_LANES * index] != p_state) {
             asm volatile("s_sleep 0");
         }
         // Load A buffer
@@ -93,14 +93,14 @@ void __device__ _tsr_consumer(
             consumer_smem_to_reg8(A_offs_buff + (op * OP_M * OP_K), reg_A[op]);
         }
         // Mark A buffer as consumed
-        queue[2 * B_LANES * index] = p_state;
+        queue[2 * B_LANES * index] = (p_state + 1) % 4;
 
         // Go through each lanes
         #pragma unroll
         for (int lane = 0; lane < B_LANES; lane++) {
 
             // Wait for B buffer to be filled
-            while (queue[2 * (B_LANES * index + lane) + 1] != 3 - p_state) {
+            while (queue[2 * (B_LANES * index + lane) + 1] != p_state) {
                 asm volatile("s_sleep 0");
             }
             // Load B buffer
@@ -109,7 +109,7 @@ void __device__ _tsr_consumer(
                 consumer_smem_to_reg16(B_offs_buff + (lane * OP_N * WARPTILE_K) + (op * OP_N * OP_K), reg_B[op]);
             }
             // Mark B buffer as consumed
-            queue[2 * (B_LANES * index + lane) + 1] = p_state;
+            queue[2 * (B_LANES * index + lane) + 1] = (p_state + 1) % 4;
 
             // Consume registers
             #pragma unroll
@@ -126,7 +126,7 @@ void __device__ _tsr_consumer(
 
         // Update index
         index += CONSUMERS;
-        p_state = (index >= QSIZE) ? (!p_state) : p_state;
+        p_state = (index >= QSIZE) ? ((p_state - 3) % 4) + 4 : p_state;
         b += CONSUMERS;
     }
 
@@ -207,7 +207,7 @@ void __device__ _tsr_consumer(
         B_offs_buff = B_buffer + index * (WARPTILE_N * WARPTILE_K);
 
         // Wait for A buffer to be filled
-        while (queue[2 * B_LANES * index] != 3 - p_state) {
+        while (queue[2 * B_LANES * index] != p_state) {
             asm volatile("s_sleep 0");
         }
         // Load A buffer
@@ -216,14 +216,14 @@ void __device__ _tsr_consumer(
             consumer_smem_to_reg8(A_offs_buff + (op * OP_M * OP_K), reg_A[op]);
         }
         // Mark A buffer as consumed
-        queue[2 * B_LANES * index] = p_state;
+        queue[2 * B_LANES * index] = (p_state + 1) % 4;
 
         // Go through each lanes
         #pragma unroll
         for (int lane = 0; lane < B_LANES; lane++) {
 
             // Wait for B buffer to be filled
-            while (queue[2 * (B_LANES * index + lane) + 1] != 3 - p_state) {
+            while (queue[2 * (B_LANES * index + lane) + 1] != p_state) {
                 asm volatile("s_sleep 0");
             }
             // Load B buffer
@@ -232,7 +232,7 @@ void __device__ _tsr_consumer(
                 consumer_smem_to_reg16(B_offs_buff + (lane * OP_N * WARPTILE_K) + (op * OP_N * OP_K), reg_B[op]);
             }
             // Mark B buffer as consumed
-            queue[2 * (B_LANES * index + lane) + 1] = p_state;
+            queue[2 * (B_LANES * index + lane) + 1] = (p_state + 1) % 4;
 
             // Consume registers
             #pragma unroll
@@ -249,7 +249,7 @@ void __device__ _tsr_consumer(
 
         // Update index
         index += CONSUMERS;
-        p_state = (index >= QSIZE) ? (!p_state) : p_state;
+        p_state = (index >= QSIZE) ? ((p_state - 3) % 4) + 4 : p_state;
         b += CONSUMERS;
     }
 
