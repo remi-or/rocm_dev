@@ -26,19 +26,21 @@
 #define NB_BANKS 32
 #define CU 304
 
-#define B_LANES 3
-#define OPS 2
+#define B_LANES 4
+#define OPS 4
 
 #define WARPTILE_M OP_M
 #define WARPTILE_N (OP_N * B_LANES)
 #define WARPTILE_K (OP_K * OPS)
 
 #define A_PRODUCERS 2
-#define B_PRODUCERS 11
-#define CONSUMERS 3
+#define B_PRODUCERS 4
+#define CONSUMERS 2
 
-#define QSIZE 9
-#define SK 1
+#define QSIZE 3
+#define SK 2
+
+// 'B_LANES': 5, 'OPS': 4, 'A_PRODUCERS': 1, 'B_PRODUCERS': 10, 'CONSUMERS': 2, 'QSIZE': 3, 'SK': 1
 
 
 #define K_BLOCKS(k, split_k) (((k / WARPTILE_K) / split_k))

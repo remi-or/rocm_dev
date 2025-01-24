@@ -144,8 +144,127 @@ void __device__ _tsr_B_producer(
     // Relocate thread in buffer
     buffer += (E_P_BANK * curr_ad) + ((curr_ld % 32 == 16) ? (16*E_P_BANK) : 0) + (curr_ld / 32) * (32*E_P_BANK * 4);
 
-    // Prepare registers
-    fp8 reg[elems_per_thread];
+//     // Prepare registers
+//     fp8 reg[elems_per_thread];
+
+//     // K-wise loop
+//     const fp8* src;
+//     fp8* buf;
+//     int b = role_id;
+
+//     while (b < B_LANES * k_blocks) {
+
+//         // Account for cyclic queue
+//         index -= (index >= QSIZE * B_LANES) ? QSIZE * B_LANES : 0;
+//         src = source + (b / B_LANES) * WARPTILE_K + (b % B_LANES) * OP_N * k;
+//         buf = buffer + index * (OP_N * WARPTILE_K);
+
+//         #pragma unroll
+//         for (int op = 0; op < OPS; op++) {
+
+//             // Load from gmem to reg
+//             asm volatile("global_load_dwordx4 %0, %1, off\n\t" : "=v"(reg) : "v"(src));
+            
+//             if (op == 0) {
+//                 // Wait for buffer to be consumed
+//                 while (queue[2 * index] != p_state) {
+//                     asm volatile("s_sleep 0");
+//                 }
+//             }
+
+//             // Make sure load is finished
+//             asm volatile("s_waitcnt vmcnt(0)");
+//             // Store in smem from reg
+//             #pragma unroll
+//             for (int i = 0; i < 4; i++) {
+//                 #pragma unroll
+//                 for (int j = 0; j < 4; j++) {
+//                     buf[32*4*i + j] = reg[4*i + j];
+//                 }
+//             }
+
+//             if (op < OPS - 1) {
+//                 src += OP_K;
+//                 buf += OP_K * OP_N;
+//             }
+//         }
+
+//         // Mark buffer as filled
+//         queue[2 * index] = 4 + p_state;
+
+//         // Update index
+//         index += B_PRODUCERS;
+//         p_state = (index >= QSIZE * B_LANES) ? ((p_state + 1) % 4) : p_state;
+//         b += B_PRODUCERS;
+//     }
+
+//     // Bring warps back in order
+//     role_id = b - (B_LANES * k_blocks);
+// }
+
+// // Prepare registers
+//     fp8 reg0[elems_per_thread];
+//     fp8 reg1[elems_per_thread];
+
+//     // K-wise loop
+//     const fp8* src;
+//     fp8* buf;
+//     int b = role_id;
+
+//     while (b < B_LANES * k_blocks) {
+
+//         // Account for cyclic queue
+//         index -= (index >= QSIZE * B_LANES) ? QSIZE * B_LANES : 0;
+//         src = source + (b / B_LANES) * WARPTILE_K + (b % B_LANES) * OP_N * k;
+//         buf = buffer + index * (OP_N * WARPTILE_K);
+
+//         asm volatile(
+//             "global_load_dwordx4 %0, %2, off offset:0\n\t" 
+//             "global_load_dwordx4 %1, %2, off offset:64\n\t" 
+//             : "=v"(reg0), "=v"(reg1)
+//             : "v"(src)
+//         );
+
+//         while (queue[2 * index] != p_state) {
+//             asm volatile("s_sleep 0");
+//         }
+
+//         asm volatile("s_waitcnt vmcnt(1)");
+//         #pragma unroll
+//         for (int i = 0; i < 4; i++) {
+//             #pragma unroll
+//             for (int j = 0; j < 4; j++) {
+//                 buf[NB_BANKS * E_P_BANK * i + j] = reg0[E_P_BANK * i + j];
+//             }
+//         }
+//         asm volatile("s_waitcnt vmcnt(0)");
+//         #pragma unroll
+//         for (int i = 0; i < 4; i++) {
+//             #pragma unroll
+//             for (int j = 0; j < 4; j++) {
+//                 buf[NB_BANKS * E_P_BANK * i + j + OP_K * OP_N * 1] = reg1[E_P_BANK * i + j];
+//             }
+//         }
+
+//         // Mark buffer as filled
+//         queue[2 * index] = 4 + p_state;
+
+//         // Update index
+//         index += B_PRODUCERS;
+//         p_state = (index >= QSIZE * B_LANES) ? ((p_state + 1) % 4) : p_state;
+//         b += B_PRODUCERS;
+//     }
+
+//     // Bring warps back in order
+//     role_id = b - (B_LANES * k_blocks);
+// }
+
+
+// Prepare registers
+    fp8 reg0[elems_per_thread];
+    fp8 reg1[elems_per_thread];
+    fp8 reg2[elems_per_thread];
+    fp8 reg3[elems_per_thread];
 
     // K-wise loop
     const fp8* src;
@@ -159,33 +278,49 @@ void __device__ _tsr_B_producer(
         src = source + (b / B_LANES) * WARPTILE_K + (b % B_LANES) * OP_N * k;
         buf = buffer + index * (OP_N * WARPTILE_K);
 
+        asm volatile(
+            "global_load_dwordx4 %0, %4, off offset:0\n\t" 
+            "global_load_dwordx4 %1, %4, off offset:64\n\t" 
+            "global_load_dwordx4 %2, %4, off offset:128\n\t" 
+            "global_load_dwordx4 %3, %4, off offset:192\n\t" \
+            : "=v"(reg0), "=v"(reg1), "=v"(reg2), "=v"(reg3)
+            : "v"(src)
+        );
+
+        while (queue[2 * index] != p_state) {
+            asm volatile("s_sleep 0");
+        }
+
+        asm volatile("s_waitcnt vmcnt(3)");
         #pragma unroll
-        for (int op = 0; op < OPS; op++) {
-
-            // Load from gmem to reg
-            asm volatile("global_load_dwordx4 %0, %1, off\n\t" : "=v"(reg) : "v"(src));
-            
-            if (op == 0) {
-                // Wait for buffer to be consumed
-                while (queue[2 * index] != p_state) {
-                    asm volatile("s_sleep 0");
-                }
-            }
-
-            // Make sure load is finished
-            asm volatile("s_waitcnt vmcnt(0)");
-            // Store in smem from reg
+        for (int i = 0; i < 4; i++) {
             #pragma unroll
-            for (int i = 0; i < 4; i++) {
-                #pragma unroll
-                for (int j = 0; j < 4; j++) {
-                    buf[32*4*i + j] = reg[4*i + j];
-                }
+            for (int j = 0; j < 4; j++) {
+                buf[NB_BANKS * E_P_BANK * i + j] = reg0[E_P_BANK * i + j];
             }
-
-            if (op < OPS - 1) {
-                src += OP_K;
-                buf += OP_K * OP_N;
+        }
+        asm volatile("s_waitcnt vmcnt(2)");
+        #pragma unroll
+        for (int i = 0; i < 4; i++) {
+            #pragma unroll
+            for (int j = 0; j < 4; j++) {
+                buf[NB_BANKS * E_P_BANK * i + j + OP_K * OP_N * 1] = reg1[E_P_BANK * i + j];
+            }
+        }
+        asm volatile("s_waitcnt vmcnt(1)");
+        #pragma unroll
+        for (int i = 0; i < 4; i++) {
+            #pragma unroll
+            for (int j = 0; j < 4; j++) {
+                buf[NB_BANKS * E_P_BANK * i + j + OP_K * OP_N * 2] = reg2[E_P_BANK * i + j];
+            }
+        }
+        asm volatile("s_waitcnt vmcnt(0)");
+        #pragma unroll
+        for (int i = 0; i < 4; i++) {
+            #pragma unroll
+            for (int j = 0; j < 4; j++) {
+                buf[NB_BANKS * E_P_BANK * i + j + OP_K * OP_N * 3] = reg3[E_P_BANK * i + j];
             }
         }
 
