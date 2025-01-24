@@ -9,7 +9,6 @@ import random
 
 from project_class import Project
 
-
 def replace_line_in_buffer(buffer: List[str], prefix: str, replacement_line: str) -> None:
     for i, line in enumerate(buffer):
         if line.startswith(prefix):
@@ -80,16 +79,16 @@ if __name__ == "__main__":
 
     # Rewrite core
     substitutions = {
-        "B_LANES": [4, 5],
-        "OPS": [2, 4],
-        "A_PRODUCERS": [1, 2],
-        "B_PRODUCERS": [8, 9, 10, 11, 12],
+        "B_LANES": [4, 5, 6, 7],
+        "OPS": [4],
+        "A_PRODUCERS": [1, 2, 3],
+        "B_PRODUCERS": [3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
         "CONSUMERS": [1, 2, 3],
-        "QSIZE": [2, 3, 4],
-        "SK": [1, 2, 4, 8],
+        "QSIZE": [2, 3, 4, 5],
+        "SK": [1, 2, 3, 4, 6, 8],
     }
 
-    curr = -1
+    curr = 0
     best = 1000000000000000
     best_params = {}
     best_idx = -1
@@ -98,35 +97,35 @@ if __name__ == "__main__":
     log = open(f"tmp_{hash}.txt", "w")
     log.write(f"{substitutions = }\n\n")
 
-    for values in itertools.product(*substitutions.values()):
-        curr += 1
-        params = {k: v for k, v in zip(substitutions.keys(), values)}
+# GRID -----------------------------------------------------------------------------------------------------------------
+    # for values in itertools.product(*substitutions.values()):
+    #     params = {k: v for k, v in zip(substitutions.keys(), values)}
+# RANDOM ---------------------------------------------------------------------------------------------------------------
+    while True:
+        params = {
+            k: random.choice(vs) for k, vs in substitutions.items()
+        }
 
         # Skip cases
         skip = False
         if params["QSIZE"] < params["B_PRODUCERS"] / params['B_LANES']:
-            skip = True
+            continue
         if (params["OPS"] == 1) and (params['QSIZE'] % 2):
-            skip = True
+            continue
         if (params["A_PRODUCERS"] + params["B_PRODUCERS"] + params["CONSUMERS"]) > 16:
-            skip = True
+            continue
         if params["QSIZE"] < max(params["A_PRODUCERS"], params["CONSUMERS"]):
-            skip = True
-
+            continue
         smem = params["QSIZE"] * ((16 * params["B_LANES"] + 8) * 64 * params["OPS"] + params["B_LANES"] / 2)
         if smem > 65536:
-            skip = True
+            continue
+        if curr < restart:
+            continue
 
-        skip_to = restart
-        if curr < skip_to:
-            skip = True
-
-        # Maybe skip
+        curr += 1
         msg = f"{curr} - {params}: " + ("SKIPPED" if skip else "") + f"\t\t(best = {best:.2f} at {best_idx})"
         log.write(msg + "\n")
         print(msg)
-        if skip:
-            continue
 
         # Create new core buffer
         current_core = original_core + []

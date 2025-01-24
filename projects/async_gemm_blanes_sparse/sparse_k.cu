@@ -84,7 +84,7 @@ void __global__ _tsr_kernel(
             ); 
         }
         // Consumers warp
-        else {
+        else if (threadIdx.x < (A_PRODUCERS + B_PRODUCERS + CONSUMERS) * WARPSIZE) {
             _tsr_consumer<T>(
                 &A_buffer[0],
                 &B_buffer[0],

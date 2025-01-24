@@ -1,14 +1,14 @@
 #include "./../common.cuh"
 #include "./sparse_k.cu"
 
-#define STACK 1
+#define STACK 100
 #define OUTD half
 
 int main(int argc, char **argv) {
     HIP_CHECK( hipSetDevice(0) );
 
     // Parameters
-    const int iterations = 2000 / STACK;
+    const int iterations = 3500 / STACK;
     const int warmups = 500 / STACK;
 
     assert(argc==4);
@@ -67,3 +67,19 @@ int main(int argc, char **argv) {
         HIP_CHECK( hipDeviceSynchronize() );
     }
 }
+
+
+// PRE pstate to 4
+//     "mean": 24.790065000000006,
+//     "std": 0.04351972282770189,
+//     "median": 24.78665,
+//     "message": "",
+//     "time_string": "",
+//     "test_output": "SKIPPED"
+// POST
+//     "mean": 24.921865000000004,
+//     "std": 0.033613914901421786,
+//     "median": 24.9217,
+//     "message": "",
+//     "time_string": "",
+//     "test_output": "SKIPPED"
