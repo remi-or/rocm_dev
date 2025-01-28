@@ -48,7 +48,7 @@ void __global__ _tsr_kernel(
     }
 
     // Tiles loop
-    int curr_n, curr_k, k_blocks, dropped_cols;
+    int curr_n, curr_k, k_blocks, dropped_rows, dropped_cols;
     const int warptile_per_row = CDIV(n, WARPTILE_N);
     const int tiles = warptile_per_row * split_k;
     const int tpw = max(CDIV(tiles, CU), 1);
@@ -61,6 +61,7 @@ void __global__ _tsr_kernel(
         k_blocks = ((warptile / warptile_per_row) == (split_k - 1)) ? (k / WARPTILE_K) - (split_k - 1) * K_BLOCKS(k, split_k) : K_BLOCKS(k, split_k);
 
         // Account for column overflow
+        dropped_rows = max(0, 0      + WARPTILE_M - m);
         dropped_cols = max(0, curr_n + WARPTILE_N - n);
         curr_n -= dropped_cols;
 
@@ -71,6 +72,7 @@ void __global__ _tsr_kernel(
                 &A_buffer[0], 
                 &queue[0],
                 index, p_state, role_id,
+                dropped_rows,
                 k, k_blocks
             ); 
         } 
@@ -93,7 +95,8 @@ void __global__ _tsr_kernel(
                 scale_tensor[0],
                 &queue[0],
                 index, p_state, role_id,
-                n, dropped_cols,
+                n, 
+                dropped_rows, dropped_cols,
                 k, k_blocks
             );
         }
@@ -110,10 +113,13 @@ void async_gemm(
     const int n, 
     const int k
 ) {
-    // Check shapes
-    if ((m % WARPTILE_M != 0) || (k % WARPTILE_K != 0)) {
-        std::cerr << "Either m, n or k is not divisible by the corresponding WARPTILE_ :";
-        std::cerr << m << ", " << n << ", " << k << std::endl;
+    // Check shape
+    if (m > WARPTILE_M) {
+        std::cerr << "m = " << k << " is greater than WARPTILE_M = " << WARPTILE_M << std::endl;
+        exit(1);
+    }    
+    if (k % WARPTILE_K != 0) {
+        std::cerr << "k = " << k << " is not divisible by WARPTILE_K = " << WARPTILE_K << std::endl;
         exit(1);
     }
 
@@ -137,7 +143,7 @@ void async_gemm(
 //     torch::Tensor& A,
 //     torch::Tensor& B,
 //     torch::Tensor& D,
-//     const float* scale_tensor,
+//     torch::Tensor& scale_tensor,
 //     int64_t split_k
 // ) {
 //     const int m = A.size(0);
@@ -147,11 +153,15 @@ void async_gemm(
 //     const fp8* __restrict__ A_ = (const fp8* __restrict__) A.data_ptr(); 
 //     const fp8* __restrict__ B_ = (const fp8* __restrict__) B.data_ptr(); 
 //     half* __restrict__ D_ = (half* __restrict__) D.data_ptr(); 
+//     float* __restrict__ scale_tensor_ = (float* __restrict__) scale_tensor.data_ptr(); 
 
-//     // Check shapes
-//     if ((m % WARPTILE_M != 0) || (k % WARPTILE_K != 0)) {
-//         std::cerr << "Either m, n or k is not divisible by the corresponding WARPTILE_ :";
-//         std::cerr << m << ", " << n << ", " << k << std::endl;
+//     // Check shape
+//     if (m > WARPTILE_M) {
+//         std::cerr << "m = " << k << " is greater than WARPTILE_M = " << WARPTILE_M << std::endl;
+//         exit(1);
+//     }    
+//     if (k % WARPTILE_K != 0) {
+//         std::cerr << "k = " << k << " is not divisible by WARPTILE_K = " << WARPTILE_K << std::endl;
 //         exit(1);
 //     }
 
@@ -168,5 +178,5 @@ void async_gemm(
 //     const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
 //     // Launch kernel
-//     _tsr_kernel<<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor, m, n, k, split_k);
+//     _tsr_kernel<<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, split_k);
 // }

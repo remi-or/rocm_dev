@@ -38,7 +38,7 @@ void host_tiled_sum_reduce(
     }
 }
 
-#define OUTD float
+#define OUTD half
 
 int main(int argc, char **argv) {
     HIP_CHECK( hipSetDevice(0) );

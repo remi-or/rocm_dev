@@ -7,6 +7,7 @@ void __device__ _tsr_A_producer(
     int &index,
     uint8 &p_state,
     int &role_id,
+    const int dropped_rows,
     const int k,
     const int k_blocks
 ) {
@@ -21,7 +22,7 @@ void __device__ _tsr_A_producer(
     const int curr_ad = thread_id / threads_per_ld;
 
     // Relocate thread in source (and queue for B producers) // WARNING: currently assume m == 8
-    src += curr_ad * k;
+    src += (curr_ad + dropped_rows > WARPTILE_M - 1) ? 0 : curr_ad * k;
     src += curr_ld;
     src += (OPS == 1 ? 2 : 1) * role_id * WARPTILE_K;
 

@@ -37,6 +37,7 @@ void __device__ _tsr_consumer(
     uint8 &p_state,
     int &role_id,
     const int n,
+    const int dropped_rows,
     const int dropped_cols,
     const int k,
     const int k_blocks
@@ -53,6 +54,7 @@ void __device__ _tsr_consumer(
     uint8 &p_state,
     int &role_id,
     const int n,
+    const int dropped_rows,
     const int dropped_cols,
     const int k,
     const int k_blocks
@@ -135,32 +137,44 @@ void __device__ _tsr_consumer(
     // Bring warps back in order
     role_id = b - k_blocks;
 
-    // Fuse complementary registers
+    // Infer the current column in D
     int out_n = 2 * ((thread_id % 16) / 2);
+
+    // Finalize registers so that each threads hold 2 consecutive results in memory
     float final_scale;
+    int id_to_swap = 1 - threadIdx.x % 2;
+    int src_lane = thread_id + 1 - 2 * (thread_id % 2);
+
     #pragma unroll
     for (int i = 0; i < B_LANES; i++) {
+
+        // Fusing
+        reg_D[i][0] = reg_D[i][0] + reg_D[i][1];
+        reg_D[i][1] = reg_D[i][2] + reg_D[i][3];
+
+        // Scaling
         final_scale = (out_n + i * OP_N) >= dropped_cols ? scale : 0.0f;
-        reg_D[i][0] = final_scale * (reg_D[i][0] + reg_D[i][1]);
-        reg_D[i][1] = final_scale * (reg_D[i][2] + reg_D[i][3]);
+        reg_D[i][0] *= final_scale;
+        reg_D[i][1] *= final_scale;
+
+        // Swapping 
+        reg_D[i][id_to_swap] = __shfl(reg_D[i][id_to_swap], src_lane);
+    }
+
+    // Infer the current row in D
+    int out_m = (thread_id / 16) * 2 + (thread_id % 2);
+
+    // If we are in dropped rows territory, we can return now
+    if (out_m + dropped_rows > WARPTILE_M -1) {
+        return ;
     }
 
     // Relocate on D
-    int out_m = (thread_id / 16) * 2 + (thread_id % 2);
     D += (out_m * n + out_n);
 
     // Out lane by lane
-    int id_to_swap = 1 - threadIdx.x % 2;
-    int src_lane = thread_id + 1 - 2 * (thread_id % 2);
-    __half2 x;
+    #pragma unroll
     for (int i = 0; i < B_LANES; i++) {
-
-        // Swap registers across the warp
-        reg_D[i][id_to_swap] = __shfl(
-            reg_D[i][id_to_swap], 
-            src_lane
-        );
-        
         atomicAdd(&D[0 + i*OP_N], reg_D[i][0]);
         atomicAdd(&D[1 + i*OP_N], reg_D[i][1]);
     }
@@ -177,6 +191,7 @@ void __device__ _tsr_consumer(
     uint8 &p_state,
     int &role_id,
     const int n,
+    const int dropped_rows,
     const int dropped_cols,
     const int k,
     const int k_blocks
@@ -259,31 +274,46 @@ void __device__ _tsr_consumer(
     // Bring warps back in order
     role_id = b - k_blocks;
 
-    // Fuse complementary registers
+    // Infer the current column in D
     int out_n = 2 * ((thread_id % 16) / 2);
+
+    // Finalize registers so that each threads hold 2 consecutive results in memory
     float final_scale;
+    int id_to_swap = 1 - threadIdx.x % 2;
+    int src_lane = thread_id + 1 - 2 * (thread_id % 2);
+
     #pragma unroll
     for (int i = 0; i < B_LANES; i++) {
+
+        // Fusing
+        reg_D[i][0] = reg_D[i][0] + reg_D[i][1];
+        reg_D[i][1] = reg_D[i][2] + reg_D[i][3];
+
+        // Scaling
         final_scale = (out_n + i * OP_N) >= dropped_cols ? scale : 0.0f;
-        reg_D[i][0] = final_scale * (reg_D[i][0] + reg_D[i][1]);
-        reg_D[i][1] = final_scale * (reg_D[i][2] + reg_D[i][3]);
+        reg_D[i][0] *= final_scale;
+        reg_D[i][1] *= final_scale;
+
+        // Swapping 
+        reg_D[i][id_to_swap] = __shfl(reg_D[i][id_to_swap], src_lane);
+    }
+
+    // Infer the current row in D
+    int out_m = (thread_id / 16) * 2 + (thread_id % 2);
+
+    // If we are in dropped rows territory, we can return now
+    if (out_m + dropped_rows > WARPTILE_M -1) {
+        return ;
     }
 
     // Relocate on D
-    int out_m = (thread_id / 16) * 2 + (thread_id % 2);
     __half2* D_ = reinterpret_cast<__half2*>(D) + (out_m * n + out_n) / 2;
 
     // Out lane by lane
-    int id_to_swap = 1 - threadIdx.x % 2;
-    int src_lane = thread_id + 1 - 2 * (thread_id % 2);
     __half2 x;
-    for (int i = 0; i < B_LANES; i++) {
 
-        // Swap registers across the warp
-        reg_D[i][id_to_swap] = __shfl(
-            reg_D[i][id_to_swap], 
-            src_lane
-        );
+    #pragma unroll
+    for (int i = 0; i < B_LANES; i++) {
         
         // Form the packed f16
         x.x = reg_D[i][0];

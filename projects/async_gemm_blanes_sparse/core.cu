@@ -35,10 +35,10 @@
 
 #define A_PRODUCERS 2
 #define B_PRODUCERS 6
-#define CONSUMERS 2
+#define CONSUMERS 3
 
 #define QSIZE 3
-#define SK 8
+#define SK 3
 
 
 #define K_BLOCKS(k, split_k) (((k / WARPTILE_K) / split_k))
