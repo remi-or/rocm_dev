@@ -31,6 +31,7 @@ void __device__ _tsr_consumer(
     fp8* A_buffer,
     fp8* B_buffer,
     T* D,
+    float scale,
     uint8* queue,
     int &index,
     uint8 &p_state,
@@ -46,6 +47,7 @@ void __device__ _tsr_consumer(
     fp8* A_buffer,
     fp8* B_buffer,
     float* D,
+    float scale,
     uint8* queue,
     int &index,
     uint8 &p_state,
@@ -135,12 +137,12 @@ void __device__ _tsr_consumer(
 
     // Fuse complementary registers
     int out_n = 2 * ((thread_id % 16) / 2);
-    bool kept;
+    float final_scale;
     #pragma unroll
     for (int i = 0; i < B_LANES; i++) {
-        kept = (out_n + i * OP_N) >= dropped_cols;
-        reg_D[i][0] = (kept) * (reg_D[i][0] + reg_D[i][1]);
-        reg_D[i][1] = (kept) * (reg_D[i][2] + reg_D[i][3]);
+        final_scale = (out_n + i * OP_N) >= dropped_cols ? scale : 0.0f;
+        reg_D[i][0] = final_scale * (reg_D[i][0] + reg_D[i][1]);
+        reg_D[i][1] = final_scale * (reg_D[i][2] + reg_D[i][3]);
     }
 
     // Relocate on D
@@ -169,6 +171,7 @@ void __device__ _tsr_consumer(
     fp8* A_buffer,
     fp8* B_buffer,
     half* D,
+    float scale,
     uint8* queue,
     int &index,
     uint8 &p_state,
@@ -258,12 +261,12 @@ void __device__ _tsr_consumer(
 
     // Fuse complementary registers
     int out_n = 2 * ((thread_id % 16) / 2);
-    bool kept;
+    float final_scale;
     #pragma unroll
     for (int i = 0; i < B_LANES; i++) {
-        kept = (out_n + i * OP_N) >= dropped_cols;
-        reg_D[i][0] = (kept) * (reg_D[i][0] + reg_D[i][1]);
-        reg_D[i][1] = (kept) * (reg_D[i][2] + reg_D[i][3]);
+        final_scale = (out_n + i * OP_N) >= dropped_cols ? scale : 0.0f;
+        reg_D[i][0] = final_scale * (reg_D[i][0] + reg_D[i][1]);
+        reg_D[i][1] = final_scale * (reg_D[i][2] + reg_D[i][3]);
     }
 
     // Relocate on D

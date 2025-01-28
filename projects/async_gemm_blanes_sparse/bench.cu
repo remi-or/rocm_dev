@@ -19,6 +19,7 @@ int main(int argc, char **argv) {
     // Tensors
     fp8 *hA, *dA, *hB, *dB;
     OUTD *D;
+    float *dScale_tensor;
 
     random_host_tensor<fp8>(hA, m * k);
     random_host_tensor<fp8>(hB, k * n);
@@ -39,6 +40,7 @@ int main(int argc, char **argv) {
         tensor_h2d<fp8>(hA, dA, m * k);
         tensor_h2d<fp8>(hB, dB, k * n);
         zero_device_tensor<OUTD>(D, m * n);
+        random_device_tensor<float>(dScale_tensor, 1);
         // Flush cache 
         flush_device_cache();
         // Sync
@@ -48,7 +50,7 @@ int main(int argc, char **argv) {
         HIP_CHECK(hipEventRecord(start));
         #pragma unroll
         for (int i = 0; i < STACK; i++) {
-            async_gemm(dA, dB, D, m, n, k);
+            async_gemm(dA, dB, D, dScale_tensor, m, n, k);
         }
         HIP_CHECK(hipEventRecord(stop));
         HIP_CHECK(hipEventSynchronize(stop));
@@ -63,6 +65,7 @@ int main(int argc, char **argv) {
         HIP_CHECK(hipFree(dA));
         HIP_CHECK(hipFree(dB));
         HIP_CHECK(hipFree(D));
+        HIP_CHECK(hipFree(dScale_tensor));
         // Sync
         HIP_CHECK( hipDeviceSynchronize() );
     }

@@ -5,7 +5,8 @@ template <typename T>
 void __global__ _tsr_kernel(
     const fp8* __restrict__ A, 
     const fp8* __restrict__ B,
-    T* __restrict__ D, 
+    T* __restrict__ D,
+    const float* scale_tensor,
     const int m,
     const int n,
     const int k,
@@ -89,6 +90,7 @@ void __global__ _tsr_kernel(
                 &A_buffer[0],
                 &B_buffer[0],
                 D + curr_n,
+                scale_tensor[0],
                 &queue[0],
                 index, p_state, role_id,
                 n, dropped_cols,
@@ -103,6 +105,7 @@ void async_gemm(
     const fp8* __restrict__ A, 
     const fp8* __restrict__ B,
     T* __restrict__ D, 
+    const float* scale_tensor,
     const int m, 
     const int n, 
     const int k
@@ -124,7 +127,7 @@ void async_gemm(
     dim3 block(warps * WARPSIZE, 1, 1);
 
     // Launch kernel
-    _tsr_kernel<T><<<grid, block, 0, 0>>>(A, B, D, m, n, k, SK);
+    _tsr_kernel<T><<<grid, block, 0, 0>>>(A, B, D, scale_tensor, m, n, k, SK);
 }
 
 
@@ -134,6 +137,7 @@ void async_gemm(
 //     torch::Tensor& A,
 //     torch::Tensor& B,
 //     torch::Tensor& D,
+//     const float* scale_tensor,
 //     int64_t split_k
 // ) {
 //     const int m = A.size(0);
@@ -164,5 +168,5 @@ void async_gemm(
 //     const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
 //     // Launch kernel
-//     _tsr_kernel<<<grid, block, 0, stream>>>(A_, B_, D_, m, n, k, split_k);
+//     _tsr_kernel<<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor, m, n, k, split_k);
 // }

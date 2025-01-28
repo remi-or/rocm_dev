@@ -8,6 +8,7 @@ void host_tiled_sum_reduce(
     const fp8* __restrict__ A, 
     const fp8* __restrict__ B,
     out_dtype* __restrict__ &D, 
+    const float* scale_tensor, 
     const int m, 
     const int n, 
     const int k
@@ -32,7 +33,7 @@ void host_tiled_sum_reduce(
                 acc += __hip_cvt_fp8_to_halfraw(a[l], __HIP_E4M3_FNUZ).data * __hip_cvt_fp8_to_halfraw(b[l], __HIP_E4M3_FNUZ).data;
             }
             // Store back
-            D[i * n + j] = (out_dtype) acc;
+            D[i * n + j] = (out_dtype) (acc * scale_tensor[0]);
         }
     }
 }
@@ -50,23 +51,29 @@ int main(int argc, char **argv) {
     // Host tensors
     fp8 *hA, *hB;
     OUTD* host_ref;
+    float* hScale_tensor;
+
     fp8 elem = __hip_cvt_float_to_fp8(1.0f, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
     random_host_tensor<fp8>(hA, m * k); // full_host_tensor<fp8>(hA, m * k, elem);
     random_host_tensor<fp8>(hB, n * k); // full_host_tensor<fp8>(hB, n * k, 0); // random_host_tensor<fp8>(hB, n * k);
     // for (int i = 16; i < 32; i++) {
     //     hB[i] = __hip_cvt_float_to_fp8(1.0f, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
     // }
-    host_tiled_sum_reduce<OUTD>(hA, hB, host_ref, m, n, k);
+
+    random_host_tensor<float>(hScale_tensor, 1); 
+    host_tiled_sum_reduce<OUTD>(hA, hB, host_ref, hScale_tensor, m, n, k);
 
     // Device tensors
     fp8 *dA, *dB;
     OUTD* dD;
+    float* dScale_tensor;
     tensor_h2d<fp8>(hA, dA, m * k);
     tensor_h2d<fp8>(hB, dB, n * k);
     zero_device_tensor<OUTD>(dD, m * n);
+    tensor_h2d<float>(hScale_tensor, dScale_tensor, 1);
 
     HIP_CHECK( hipDeviceSynchronize() );
-    async_gemm(dA, dB, dD, m, n, k);
+    async_gemm(dA, dB, dD, dScale_tensor, m, n, k);
     HIP_CHECK( hipDeviceSynchronize() );
 
     // Transfer result and free device tensors
