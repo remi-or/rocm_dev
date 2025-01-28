@@ -60,7 +60,7 @@ class Grid:
                 continue
             params_enumerator.append((i, params))
         if shuffle:
-            random.shuffle(params_enumerator, lambda: 0)
+            random.shuffle(params_enumerator) # TODO: fix seed
         return params_enumerator
 
     def save_original_core(self) -> List[str]:
@@ -80,9 +80,9 @@ class Grid:
             # Check if mean latency is the new best
             if data["mean"] < best_latency:
                 best_i, best_latency, best_params = i, data["mean"], params
-                self.log(f"{i} - {params}\n{data}{sep}NEW BEST: {best_i} - {best_latency}{sep}\n")
+                self.log(f"{i} - {params}\n{data}{sep}NEW BEST: {best_i} at {best_latency}{sep}\n")
             else:
-                self.log(f"{i} - {params}\n{data}\nBest is still: {best_i} - {best_latency}\n\n")
+                self.log(f"{i} - {params}\n{data}\nBest is still: {best_i} at {best_latency}\n\n")
 
         # Rewrite best
         self.log(f"\n\nBEST OVERALL: {best_latency} at {best_i} with {best_params}")
