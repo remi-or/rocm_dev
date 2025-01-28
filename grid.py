@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Dict
 import argparse
 import numpy as np
 import json
@@ -9,158 +9,158 @@ import random
 
 from project_class import Project
 
+    
+def skip(params: Dict[str, int]) -> bool:
+    # Compute the amount of shared memory (smem) needed
+    smem = params["QSIZE"] * ((16 * params["B_LANES"] + 8) * 64 * params["OPS"] + params["B_LANES"] / 2)
+    max_smem = 65536
+    # Return True if we need to skip the benchmark of these parameters
+    return any([
+        params["QSIZE"] < params["B_PRODUCERS"] / params['B_LANES'],                # queue is too short (B)
+        (params["OPS"] == 1) and (params['QSIZE'] % 2),                             # queue is odd but ops isn't
+        (params["A_PRODUCERS"] + params["B_PRODUCERS"] + params["CONSUMERS"]) > 16, # too many warps
+        params["QSIZE"] < max(params["A_PRODUCERS"], params["CONSUMERS"]),          # queue is too short (A/C)
+        smem > max_smem,                                                            # not enough smem
+    ])
+
 def replace_line_in_buffer(buffer: List[str], prefix: str, replacement_line: str) -> None:
     for i, line in enumerate(buffer):
         if line.startswith(prefix):
             buffer[i] = replacement_line
             return None
 
-def bench_current_state(
-    project: Project,
-    skip_test: bool,
-    verbose: bool,
-    timeout: Optional[float] = None,
-) -> None:
-    
-    # Compile and run test
-    if skip_test:
-        test_output = "SKIPPED"
-    else:
-        test_output = project.compile_and_run("test.cu", arguments)
-    
-    # Compile and run benchmark
-    try:
-        time_string = project.compile_and_run("bench.cu", arguments, timeout)
-        times = time_string[2:-3].split(", ")[3:]
-    except subprocess.TimeoutExpired as t:
-        print("ERROR: End of timeout.")
-        return {"mean": 100000000000000000}
-    except subprocess.CalledProcessError as t:
-        print(f"ERROR: {t.stderr}.")
-        return {"mean": 100000000000000000}
-    
-    # Retrieve benchmarked times
-    bench_ts, t = [], times.pop()
-    while t != "End of warmup":
-        bench_ts.append(float(t))
-        t = times.pop()
-    warmup_ts = list(map(float, times))
-    # Process them
-    data = {
-        "mean": float(np.mean(bench_ts)),
-        "std": float(np.std(bench_ts)),
-        "median": float(np.median(bench_ts)),
-        # "test_output": test_output,
-    }
-    if verbose:
-        print(json.dumps(data, indent=4))
-    return data
+
+class Grid:
+
+    def __init__(self, 
+        substitutions: Dict[str, List[int]],
+        project: Project,
+        arguments: str,
+        shuffle: bool = False,
+        skip_to: int = 0,
+    ) -> None:
+        self.project = project
+        self.arguments = arguments
+        self.params_enumerator = self.prepare_params_enumerator(substitutions, shuffle, skip_to)
+        self.core = self.save_original_core()
+        self.hash = (sum([sum(v) * len(k) for k, v in substitutions.items()]) % 10000) * 10000 + random.randint(0, 9999)
+        self.log(f"{substitutions}\n\n")
+
+    def prepare_params_enumerator(
+        self, substitutions: Dict[str, List[int]], shuffle: bool, skip_to: int
+    ) -> List[Dict[str, int]]:
+        params_enumerator = []
+        i = 0
+        for values in itertools.product(*substitutions.values()):
+            params = {k: v for k, v in zip(substitutions.keys(), values)}
+            if skip(params):
+                continue
+            i += 1
+            if i < skip_to:
+                continue
+            params_enumerator.append((i, params))
+        if shuffle:
+            random.shuffle(params_enumerator, lambda: 0)
+        return params_enumerator
+
+    def save_original_core(self) -> List[str]:
+        core_file = os.path.join(self.project.project_dir, "core.cu")
+        with open(core_file) as file:
+            original_core = file.readlines()
+        return [core_file] + original_core
+
+    def explore(self) -> None:
+        best_latency, best_i, best_params = 1e9, -1, {}
+        sep = "\n" + "-" * 80 + "\n"
+        # Main loop
+        for i, params in self.params_enumerator:
+
+            # Bench current params
+            data = self.bench_params(params)
+            # Check if mean latency is the new best
+            if data["mean"] < best_latency:
+                best_i, best_latency, best_params = i, data["mean"], params
+                self.log(f"{i} - {params}\n{data}{sep}NEW BEST: {best_i} - {best_latency}{sep}\n")
+            else:
+                self.log(f"{i} - {params}\n{data}\nBest is still: {best_i} - {best_latency}\n\n")
+
+        # Rewrite best
+        self.log(f"\n\nBEST OVERALL: {best_latency} at {best_i} with {best_params}")
+        # Write back original core
+        with open(self.core[0], "w") as file:
+            for line in self.core[1:]:
+                file.write(line)    
+
+    def bench_params(self, params: Dict[str, int]) -> Dict[str, float]:
+        # Create new core
+        new_core = self.core[1:]
+        for k, v in params.items():
+            replace_line_in_buffer(new_core, f"#define {k}", f"#define {k} {v}\n")
+        # Substitute old core with the new one
+        with open(self.core[0], "w") as file:
+            for line in new_core:
+                file.write(line)
+        # Bench with new core
+        return self.bench_current_state(timeout=25)
+
+    def log(self, msg: str) -> None:
+        with open(f"tmp_{self.hash}.txt", "a") as file:
+            file.write(msg)
+        print(msg, end="")
+        
+    def bench_current_state(self, timeout: Optional[float] = None) -> Dict[str, float]:
+        # Compile and run benchmark
+        try:
+            time_string = self.project.compile_and_run("bench.cu", self.arguments, timeout)
+            times = time_string[2:-3].split(", ")[3:]
+        except subprocess.TimeoutExpired as t:
+            print("ERROR: End of timeout.")
+            return {"mean": 100000000000000000}
+        except subprocess.CalledProcessError as t:
+            print(f"ERROR: {t.stderr}.")
+            return {"mean": 100000000000000000}
+        # Retrieve benchmarked times
+        bench_ts, t = [], times.pop()
+        while t != "End of warmup":
+            bench_ts.append(float(t))
+            t = times.pop()
+        # Process them
+        data = {
+            "mean": float(np.mean(bench_ts)),
+            "std": float(np.std(bench_ts)),
+            "median": float(np.median(bench_ts)),
+        }
+        return data
 
 
 
 if __name__ == "__main__":
 
-    # Retrieve the name of the project
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--project", "-p", required=True)
-    parser.add_argument("--arguments", "-a", default="")
-    parser.add_argument("--verbose", "-v", action="store_true")
-    parser.add_argument("--restart", "-r", default=0, type=int)
-    # parser.add_argument("--skip-test", "-st", action="store_true")
-    args = parser.parse_args()
-    project = Project(str(args.project))
-    arguments = str(args.arguments)
-    restart = int(args.restart)
-
-    # Find core
-    core_file = os.path.join(project.project_dir, "core.cu")
-    with open(core_file) as file:
-        original_core = file.readlines()
-
-    # Rewrite core
     substitutions = {
-        "B_LANES": [4, 5, 6, 7],
+        "B_LANES": [3, 4, 5, 6, 7, 8],
         "OPS": [4],
-        "A_PRODUCERS": [1, 2, 3],
-        "B_PRODUCERS": [3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-        "CONSUMERS": [1, 2, 3],
+        "A_PRODUCERS": [2, 3],
+        "B_PRODUCERS": [6, 8, 9, 10, 12],
+        "CONSUMERS": [2, 3],
         "QSIZE": [2, 3, 4, 5],
         "SK": [1, 2, 3, 4, 6, 8],
     }
 
-    curr = 0
-    best = 1000000000000000
-    best_params = {}
-    best_idx = -1
+    # Parse arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--project", "-p", required=True)
+    parser.add_argument("--arguments", "-a", default="")
+    parser.add_argument("--shuffle", "-s", action="store_true")
+    parser.add_argument("--restart", "-r", default=0, type=int)
+    
+    args = parser.parse_args()
 
-    hash = (sum([sum(v) * len(k) for k, v in substitutions.items()]) % 10000) * 1000 + random.randint(0, 999)
-    log = open(f"tmp_{hash}.txt", "w")
-    log.write(f"{substitutions = }\n\n")
+    grid = Grid(
+        substitutions=substitutions,
+        project=Project(str(args.project)),
+        arguments=str(args.arguments),
+        shuffle=bool(args.shuffle),
+        skip_to=int(args.restart),
+    )
 
-# GRID -----------------------------------------------------------------------------------------------------------------
-    # for values in itertools.product(*substitutions.values()):
-    #     params = {k: v for k, v in zip(substitutions.keys(), values)}
-# RANDOM ---------------------------------------------------------------------------------------------------------------
-    while True:
-        params = {
-            k: random.choice(vs) for k, vs in substitutions.items()
-        }
-
-        # Skip cases
-        skip = False
-        if params["QSIZE"] < params["B_PRODUCERS"] / params['B_LANES']:
-            continue
-        if (params["OPS"] == 1) and (params['QSIZE'] % 2):
-            continue
-        if (params["A_PRODUCERS"] + params["B_PRODUCERS"] + params["CONSUMERS"]) > 16:
-            continue
-        if params["QSIZE"] < max(params["A_PRODUCERS"], params["CONSUMERS"]):
-            continue
-        smem = params["QSIZE"] * ((16 * params["B_LANES"] + 8) * 64 * params["OPS"] + params["B_LANES"] / 2)
-        if smem > 65536:
-            continue
-        if curr < restart:
-            continue
-
-        curr += 1
-        msg = f"{curr} - {params}: " + ("SKIPPED" if skip else "") + f"\t\t(best = {best:.2f} at {best_idx})"
-        log.write(msg + "\n")
-        print(msg)
-
-        # Create new core buffer
-        current_core = original_core + []
-        # Alter it
-        for k, v in params.items():
-            replace_line_in_buffer(current_core, f"#define {k}", f"#define {k} {v}\n")
-        # Write it back
-        with open(core_file, "w") as file:
-            for line in current_core:
-                file.write(line)
-
-        # Bench with altered core
-        data = bench_current_state(
-            project=project, 
-            skip_test=True, 
-            verbose=True,
-            timeout=15,
-        )
-        print()
-        log.write(f"{data}\n")
-        log.close()
-        log = open(f"tmp_{hash}.txt", "a")
-
-        # Memoize best
-        if data["mean"] and data["mean"] < best:
-            best = data["mean"]
-            best_idx = curr
-            best_params = params
-            print("-" * 80, f"NEW BEST: {best}", "-" * 80, sep="\n")
-
-    # Output best 
-    log.write(f"{best = }\n{best_params = }")
-    print(f"{best = }\n{best_params = }")
-        
-    # Write back original core
-    with open(core_file, "w") as file:
-        for line in original_core:
-            file.write(line)        
+    grid.explore()

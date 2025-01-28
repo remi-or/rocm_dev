@@ -130,7 +130,7 @@ void async_gemm(
 
 
 
-// void sparse_k(
+// void skinny_gemm(
 //     torch::Tensor& A,
 //     torch::Tensor& B,
 //     torch::Tensor& D,

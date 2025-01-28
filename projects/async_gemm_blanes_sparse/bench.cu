@@ -1,14 +1,14 @@
 #include "./../common.cuh"
 #include "./sparse_k.cu"
 
-#define STACK 100
+#define STACK 1
 #define OUTD half
 
 int main(int argc, char **argv) {
     HIP_CHECK( hipSetDevice(0) );
 
     // Parameters
-    const int iterations = 3500 / STACK;
+    const int iterations = 2500 / STACK;
     const int warmups = 500 / STACK;
 
     assert(argc==4);
