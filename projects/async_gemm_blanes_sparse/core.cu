@@ -18,6 +18,7 @@
 // using uint32 = unsigned int;
 // using uint64 = unsigned long long;
 
+// Absolute constants
 #define WARPSIZE 64
 #define OP_M 8
 #define OP_N 16
@@ -26,19 +27,20 @@
 #define NB_BANKS 32
 #define CU 304
 
-#define B_LANES 3
+// User defined constants
 #define OPS 4
+#define SK 3
 
+// Infered constants
 #define WARPTILE_M OP_M
-#define WARPTILE_N (OP_N * B_LANES)
 #define WARPTILE_K (OP_K * OPS)
 
-#define A_PRODUCERS 2
-#define B_PRODUCERS 6
-#define CONSUMERS 3
-
-#define QSIZE 3
-#define SK 3
+// Parameters
+#define A_PRODUCERS_ 2
+#define B_PRODUCERS_ 6
+#define CONSUMERS_ 2
+#define B_LANES_ 5
+#define QSIZE_ 2
 
 
 #define K_BLOCKS(k, split_k) (((k / WARPTILE_K) / split_k))

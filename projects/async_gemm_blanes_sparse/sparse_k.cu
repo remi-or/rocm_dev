@@ -1,7 +1,7 @@
 #include "./consumer.cu"
 #include "./producer.cu"
 
-
+template<int A_PRODUCERS, int B_PRODUCERS, int CONSUMERS, int B_LANES, int QSIZE>
 void __global__ _tsr_kernel(
     const fp8* __restrict__ A, 
     const fp8* __restrict__ B,
@@ -19,7 +19,7 @@ void __global__ _tsr_kernel(
     }
     // Declare shared buffer
     __shared__ fp8 A_buffer[WARPTILE_M * WARPTILE_K * QSIZE];
-    __shared__ fp8 B_buffer[WARPTILE_N * WARPTILE_K * QSIZE];
+    __shared__ fp8 B_buffer[(OP_N * B_LANES) * WARPTILE_K * QSIZE];
     __syncthreads();
 
 
@@ -49,25 +49,25 @@ void __global__ _tsr_kernel(
 
     // Tiles loop
     int curr_n, curr_k, k_blocks, dropped_rows, dropped_cols;
-    const int warptile_per_row = CDIV(n, WARPTILE_N);
+    const int warptile_per_row = CDIV(n, (OP_N * B_LANES));
     const int tiles = warptile_per_row * split_k;
     const int tpw = max(CDIV(tiles, CU), 1);
 
     for (int warptile = (tpw * blockIdx.x); warptile < min(tiles, tpw * (blockIdx.x + 1)); warptile++) {
 
         // Compute tile position
-        curr_n = (warptile % warptile_per_row) * WARPTILE_N;
+        curr_n = (warptile % warptile_per_row) * (OP_N * B_LANES);
         curr_k = (warptile / warptile_per_row) * WARPTILE_K * K_BLOCKS(k, split_k);
         k_blocks = ((warptile / warptile_per_row) == (split_k - 1)) ? (k / WARPTILE_K) - (split_k - 1) * K_BLOCKS(k, split_k) : K_BLOCKS(k, split_k);
 
         // Account for column overflow
         dropped_rows = max(0, 0      + WARPTILE_M - m);
-        dropped_cols = max(0, curr_n + WARPTILE_N - n);
+        dropped_cols = max(0, curr_n + (OP_N * B_LANES) - n);
         curr_n -= dropped_cols;
 
         // A producer warp
         if (threadIdx.x < A_PRODUCERS * WARPSIZE) {
-            _tsr_A_producer(
+            _tsr_A_producer<A_PRODUCERS, B_LANES, QSIZE>(
                 A + curr_k, 
                 &A_buffer[0], 
                 &queue[0],
@@ -78,7 +78,7 @@ void __global__ _tsr_kernel(
         } 
         // B producer warp
         else if (threadIdx.x < A_PRODUCERS * WARPSIZE + B_PRODUCERS * WARPSIZE) {
-            _tsr_B_producer(
+            _tsr_B_producer<B_PRODUCERS, B_LANES, QSIZE>(
                 B + curr_n * k + curr_k,
                 &B_buffer[0],
                 &queue[1],
@@ -88,7 +88,7 @@ void __global__ _tsr_kernel(
         }
         // Consumers warp
         else if (threadIdx.x < (A_PRODUCERS + B_PRODUCERS + CONSUMERS) * WARPSIZE) {
-            _tsr_consumer(
+            _tsr_consumer<CONSUMERS, B_LANES, QSIZE>(
                 &A_buffer[0],
                 &B_buffer[0],
                 D + curr_n,
@@ -126,13 +126,13 @@ void async_gemm(
     dim3 grid(CU, 1, 1);
 
     int warps = 0;
-    warps += A_PRODUCERS;
-    warps += B_PRODUCERS;
-    warps += CONSUMERS;
+    warps += A_PRODUCERS_;
+    warps += B_PRODUCERS_;
+    warps += CONSUMERS_;
     dim3 block(warps * WARPSIZE, 1, 1);
 
     // Launch kernel
-    _tsr_kernel<<<grid, block, 0, 0>>>(A, B, D, scale_tensor, m, n, k, SK);
+    _tsr_kernel<A_PRODUCERS_, B_PRODUCERS_, CONSUMERS_, B_LANES_, QSIZE_><<<grid, block, 0, 0>>>(A, B, D, scale_tensor, m, n, k, SK);
 }
 
 

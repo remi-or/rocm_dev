@@ -1,5 +1,6 @@
 #include "./core.cu"
 
+template<int A_PRODUCERS, int B_LANES, int QSIZE>
 void __device__ _tsr_A_producer(
     const fp8* __restrict__ src,
     fp8* buffer,
@@ -118,6 +119,7 @@ void __device__ _tsr_A_producer(
     role_id = (b - k_blocks) / (OPS == 1 ? 2 : 1); // WARNING: not sure about this (and it's late)
 }
 
+template<int B_PRODUCERS, int B_LANES, int QSIZE>
 void __device__ _tsr_B_producer(
     const fp8* __restrict__ source,
     fp8* buffer,

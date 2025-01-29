@@ -26,6 +26,7 @@ void inline __device__ consumer_smem_to_reg16(fp8* buffer, fp8x16 &reg)
     for (int i = 0; i < 4; i++) { reg[i + 12] = buffer[i + 3 * 32*E_P_BANK]; }
 }
 
+template<int CONSUMERS, int B_LANES, int QSIZE>
 void __device__ _tsr_consumer(
     fp8* A_buffer,
     fp8* B_buffer,
@@ -67,7 +68,7 @@ void __device__ _tsr_consumer(
         // Account for cyclic queue
         index -= (index >= QSIZE) ? QSIZE : 0;
         A_offs_buff = A_buffer + index * (WARPTILE_M * WARPTILE_K);
-        B_offs_buff = B_buffer + index * (WARPTILE_N * WARPTILE_K);
+        B_offs_buff = B_buffer + index * ((OP_N * B_LANES) * WARPTILE_K);
 
         // Wait for A buffer to be filled
         while (queue[2 * B_LANES * index] != p_state) {
