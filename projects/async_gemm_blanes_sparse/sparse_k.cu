@@ -1,11 +1,11 @@
 #include "./consumer.cu"
 #include "./producer.cu"
 
-template <typename T>
+
 void __global__ _tsr_kernel(
     const fp8* __restrict__ A, 
     const fp8* __restrict__ B,
-    T* __restrict__ D,
+    half* __restrict__ D,
     const float* scale_tensor,
     const int m,
     const int n,
@@ -88,7 +88,7 @@ void __global__ _tsr_kernel(
         }
         // Consumers warp
         else if (threadIdx.x < (A_PRODUCERS + B_PRODUCERS + CONSUMERS) * WARPSIZE) {
-            _tsr_consumer<T>(
+            _tsr_consumer(
                 &A_buffer[0],
                 &B_buffer[0],
                 D + curr_n,
@@ -103,11 +103,10 @@ void __global__ _tsr_kernel(
     }    
 }
 
-template <typename T>
 void async_gemm(
     const fp8* __restrict__ A, 
     const fp8* __restrict__ B,
-    T* __restrict__ D, 
+    half* __restrict__ D, 
     const float* scale_tensor,
     const int m, 
     const int n, 
@@ -133,7 +132,7 @@ void async_gemm(
     dim3 block(warps * WARPSIZE, 1, 1);
 
     // Launch kernel
-    _tsr_kernel<T><<<grid, block, 0, 0>>>(A, B, D, scale_tensor, m, n, k, SK);
+    _tsr_kernel<<<grid, block, 0, 0>>>(A, B, D, scale_tensor, m, n, k, SK);
 }
 
 
