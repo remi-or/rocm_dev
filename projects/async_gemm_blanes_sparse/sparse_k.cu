@@ -1,7 +1,7 @@
 #include "./consumer.cu"
 #include "./producer.cu"
 
-template<int A_PRODUCERS, int B_PRODUCERS, int CONSUMERS, int B_LANES, int QSIZE>
+template<int B_LANES, int A_PRODUCERS, int B_PRODUCERS, int CONSUMERS, int QSIZE>
 void __global__ _tsr_kernel(
     const fp8* __restrict__ A, 
     const fp8* __restrict__ B,
@@ -132,7 +132,7 @@ void async_gemm(
     dim3 block(warps * WARPSIZE, 1, 1);
 
     // Launch kernel
-    _tsr_kernel<A_PRODUCERS_, B_PRODUCERS_, CONSUMERS_, B_LANES_, QSIZE_><<<grid, block, 0, 0>>>(A, B, D, scale_tensor, m, n, k, SK);
+    _tsr_kernel<B_LANES_, A_PRODUCERS_, B_PRODUCERS_, CONSUMERS_, QSIZE_><<<grid, block, 0, 0>>>(A, B, D, scale_tensor, m, n, k, SK);
 }
 
 
@@ -143,6 +143,7 @@ void async_gemm(
 //     torch::Tensor& B,
 //     torch::Tensor& D,
 //     torch::Tensor& scale_tensor,
+//     int64_t b_lanes,
 //     int64_t split_k
 // ) {
 //     const int m = A.size(0);
@@ -166,16 +167,21 @@ void async_gemm(
 
 //     // Prepare kernel launch
 //     dim3 grid(CU, 1, 1);
-
-//     int warps = 0;
-//     warps += A_PRODUCERS;
-//     warps += B_PRODUCERS;
-//     warps += CONSUMERS;
-//     dim3 block(warps * WARPSIZE, 1, 1);
-
+//     dim3 block(1, 1, 1);
 //     const at::cuda::OptionalCUDAGuard device_guard(device_of(A));
 //     const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-//     // Launch kernel
-//     _tsr_kernel<<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, split_k);
+//     // Launch kernel (branched on B_LANES)
+//     switch (b_lanes) {
+//         case 3:
+//             block.x = WARPSIZE * (2 + 6 + 3);
+//             _tsr_kernel<3, 2, 6, 3, 3><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, split_k);
+//             break;
+//         case 5:
+//             block.x = WARPSIZE * (2 + 6 + 2);
+//             _tsr_kernel<5, 2, 6, 2, 2><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, split_k);
+//             break;
+//         default:
+//             break;
+//     }
 // }

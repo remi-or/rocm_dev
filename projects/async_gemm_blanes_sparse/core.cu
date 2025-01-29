@@ -36,13 +36,15 @@
 #define WARPTILE_K (OP_K * OPS)
 
 // Parameters
+#define B_LANES_ 5
+
 #define A_PRODUCERS_ 2
 #define B_PRODUCERS_ 6
 #define CONSUMERS_ 2
-#define B_LANES_ 5
+
 #define QSIZE_ 2
 
-
+// Macros
 #define K_BLOCKS(k, split_k) (((k / WARPTILE_K) / split_k))
 
 #define CDIV(a, b) ((a + b - 1) / (b))
