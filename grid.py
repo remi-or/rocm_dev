@@ -12,14 +12,14 @@ from project_class import Project
     
 def skip(params: Dict[str, int]) -> bool:
     # Compute the amount of shared memory (smem) needed
-    smem = params["QSIZE"] * ((16 * params["B_LANES"] + 8) * 64 * params["OPS"] + params["B_LANES"] / 2)
+    smem = params["QSIZE_"] * ((16 * params["B_LANES_"] + 8) * 64 * params["OPS"] + params["B_LANES_"] / 2)
     max_smem = 65536
     # Return True if we need to skip the benchmark of these parameters
     return any([
-        params["QSIZE"] < params["B_PRODUCERS"] / params['B_LANES'],                # queue is too short (B)
-        (params["OPS"] == 1) and (params['QSIZE'] % 2),                             # queue is odd but ops isn't
-        (params["A_PRODUCERS"] + params["B_PRODUCERS"] + params["CONSUMERS"]) > 16, # too many warps
-        params["QSIZE"] < max(params["A_PRODUCERS"], params["CONSUMERS"]),          # queue is too short (A/C)
+        params["QSIZE_"] < params["B_PRODUCERS_"] / params['B_LANES_'],                # queue is too short (B)
+        (params["OPS"] == 1) and (params['QSIZE_'] % 2),                             # queue is odd but ops isn't
+        (params["A_PRODUCERS_"] + params["B_PRODUCERS_"] + params["CONSUMERS_"]) > 16, # too many warps
+        params["QSIZE_"] < max(params["A_PRODUCERS_"], params["CONSUMERS_"]),          # queue is too short (A/C)
         smem > max_smem,                                                            # not enough smem
     ])
 
@@ -137,12 +137,12 @@ class Grid:
 if __name__ == "__main__":
 
     substitutions = {
-        "B_LANES": [3, 4, 5, 6, 7, 8],
+        "B_LANES_": [3, 4, 5, 6, 7, 8],
         "OPS": [4],
-        "A_PRODUCERS": [2, 3],
-        "B_PRODUCERS": [6, 8, 9, 10, 12],
-        "CONSUMERS": [2, 3],
-        "QSIZE": [2, 3, 4, 5],
+        "A_PRODUCERS_": [2, 3, 4],
+        "B_PRODUCERS_": [6, 7, 8, 9, 10, 11, 12],
+        "CONSUMERS_": [2, 3, 4],
+        "QSIZE_": [2, 3, 4, 5, 6],
         "SK": [1, 2, 3, 4, 6, 8],
     }
 

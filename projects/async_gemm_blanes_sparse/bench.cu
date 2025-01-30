@@ -1,15 +1,15 @@
 #include "./../common.cuh"
 #include "./sparse_k.cu"
 
-#define STACK 1
+#define BATCH 10
 #define OUTD half
 
 int main(int argc, char **argv) {
     HIP_CHECK( hipSetDevice(0) );
 
     // Parameters
-    const int iterations = 2500 / STACK;
-    const int warmups = 500 / STACK;
+    const int iterations = 2500 / BATCH;
+    const int warmups = 500 / BATCH;
 
     assert(argc==4);
     const int m = atoi(argv[1]);
@@ -22,7 +22,7 @@ int main(int argc, char **argv) {
     float *dScale_tensor;
 
     random_host_tensor<fp8>(hA, m * k);
-    random_host_tensor<fp8>(hB, k * n);
+    random_host_tensor<fp8>(hB, BATCH * n * k);
 
     // Events 
     hipEvent_t start, stop;
@@ -38,8 +38,8 @@ int main(int argc, char **argv) {
 
         // Create tensors
         tensor_h2d<fp8>(hA, dA, m * k);
-        tensor_h2d<fp8>(hB, dB, k * n);
-        zero_device_tensor<OUTD>(D, m * n);
+        tensor_h2d<fp8>(hB, dB, BATCH * n * k);
+        empty_device_tensor<OUTD>(D, m * n);
         random_device_tensor<float>(dScale_tensor, 1);
         // Flush cache 
         flush_device_cache();
@@ -49,8 +49,13 @@ int main(int argc, char **argv) {
         // Call and time kernel
         HIP_CHECK(hipEventRecord(start));
         #pragma unroll
-        for (int i = 0; i < STACK; i++) {
-            async_gemm(dA, dB, D, dScale_tensor, m, n, k);
+        for (int i = 0; i < BATCH; i++) {
+            async_gemm(
+                dA, 
+                dB + i * n * k, 
+                D, 
+                dScale_tensor, 
+                m, n, k);
         }
         HIP_CHECK(hipEventRecord(stop));
         HIP_CHECK(hipEventSynchronize(stop));
@@ -59,15 +64,13 @@ int main(int argc, char **argv) {
         if (iter == warmups) {
             std::cout << "End of warmup, ";
         }
-        std::cout << t * 1000 / STACK << ", ";
+        std::cout << t * 1000 / BATCH << ", ";
 
         // Free tensors
         HIP_CHECK(hipFree(dA));
         HIP_CHECK(hipFree(dB));
         HIP_CHECK(hipFree(D));
         HIP_CHECK(hipFree(dScale_tensor));
-        // Sync
-        HIP_CHECK( hipDeviceSynchronize() );
     }
 }
 
