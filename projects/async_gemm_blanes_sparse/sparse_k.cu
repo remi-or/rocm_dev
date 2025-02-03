@@ -13,7 +13,7 @@ void __global__ _tsr_kernel(
     const int split_k
 ) {
     // Initialize shared queue
-    __shared__ uint8 queue[2 * B_LANES * QSIZE];
+    __shared__ int queue[2 * B_LANES * QSIZE];
     if (threadIdx.x < 2 * B_LANES * QSIZE) {
         queue[threadIdx.x] = 0;
     }
@@ -26,8 +26,8 @@ void __global__ _tsr_kernel(
     // Infer index and p-state
     int role_id;
     int index;
-    uint8 p_state;
-
+    int p_state;
+    
     // A producer warp
     if (threadIdx.x < A_PRODUCERS * WARPSIZE) {
         role_id = threadIdx.x / WARPSIZE;
@@ -44,7 +44,7 @@ void __global__ _tsr_kernel(
     else {
         role_id = (threadIdx.x / WARPSIZE) - (A_PRODUCERS + B_PRODUCERS);
         index = role_id;
-        p_state = 32;
+        p_state = 1;
     }
 
     // Tiles loop

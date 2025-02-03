@@ -137,13 +137,13 @@ class Grid:
 if __name__ == "__main__":
 
     substitutions = {
-        "B_LANES_": [3, 4, 5, 6, 7, 8],
-        "OPS": [4],
-        "A_PRODUCERS_": [2, 3, 4],
-        "B_PRODUCERS_": [6, 7, 8, 9, 10, 11, 12],
-        "CONSUMERS_": [2, 3, 4],
-        "QSIZE_": [2, 3, 4, 5, 6],
-        "SK": [1, 2, 3, 4, 6, 8],
+        "B_LANES_": [5],
+        "OPS": [2],
+        "A_PRODUCERS_": [2],
+        "B_PRODUCERS_": [6, 7],
+        "CONSUMERS_": [2],
+        "QSIZE_": [2],
+        "SK": [i + 1 for i in range(32)],
     }
 
     # Parse arguments

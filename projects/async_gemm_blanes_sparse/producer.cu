@@ -4,9 +4,9 @@ template<int A_PRODUCERS, int B_LANES, int QSIZE>
 void __device__ _tsr_A_producer(
     const fp8* __restrict__ src,
     fp8* buffer,
-    uint8* queue,
+    int* queue,
     int &index,
-    uint8 &p_state,
+    int &p_state,
     int &role_id,
     const int dropped_rows,
     const int k,
@@ -73,7 +73,8 @@ void __device__ _tsr_A_producer(
             buf += (OPS == 1 ? 0 : 2 * OP_K * OP_M);
         }
         // Mark buffer as filled
-        queue[2 * B_LANES * index] = p_state + 32;
+        queue[2 * B_LANES * index] = p_state + 1;
+        buf += (OPS == 1 ? 0 : 2 * OP_K * OP_M);
 
 #if OPS > 1
         // Advance
@@ -81,7 +82,7 @@ void __device__ _tsr_A_producer(
 
         // Update index
         index += A_PRODUCERS;
-        p_state = (index >= QSIZE) ? p_state + 64 : p_state;
+        p_state = (index >= QSIZE) ? (p_state+2) : p_state;
         b += A_PRODUCERS;
 #else
         // Second buffer //
@@ -103,14 +104,14 @@ void __device__ _tsr_A_producer(
             }
         }
         // Mark buffer as filled
-        queue[2 * B_LANES * index] = p_state + 32;
+        queue[2 * B_LANES * index] = p_state + 1;
 
         // Advance
         src += 2 * OP_K * (A_PRODUCERS - 1);
 
         // Update index
         index += 2*A_PRODUCERS - 1;
-        p_state = (index >= QSIZE) ? p_state + 64;
+        p_state += (index >= QSIZE) ? p_state + 2 : 0;
         b += 2*A_PRODUCERS;
 #endif
     }
@@ -123,9 +124,9 @@ template<int B_PRODUCERS, int B_LANES, int QSIZE>
 void __device__ _tsr_B_producer(
     const fp8* __restrict__ source,
     fp8* buffer,
-    uint8* queue,
+    int* queue,
     int &index,
-    uint8 &p_state,
+    int &p_state,
     int &role_id,
     const int k,
     const int k_blocks
@@ -263,7 +264,7 @@ void __device__ _tsr_B_producer(
 // }
 
 
-// Prepare registers
+    // Prepare registers
     fp8 reg0[elems_per_thread];
     fp8 reg1[elems_per_thread];
     fp8 reg2[elems_per_thread];
@@ -328,11 +329,11 @@ void __device__ _tsr_B_producer(
         }
 
         // Mark buffer as filled
-        queue[2 * index] = p_state + 32;
+        queue[2 * index] = p_state + 1;
 
         // Update index
         index += B_PRODUCERS;
-        p_state = (index >= QSIZE * B_LANES) ? p_state + 64 : p_state;
+        p_state = (index >= QSIZE * B_LANES) ? (p_state+2) : p_state;
         b += B_PRODUCERS;
     }
 

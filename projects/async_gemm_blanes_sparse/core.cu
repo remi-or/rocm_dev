@@ -39,7 +39,7 @@
 #define B_LANES_ 5
 
 #define A_PRODUCERS_ 2
-#define B_PRODUCERS_ 6
+#define B_PRODUCERS_ 8
 #define CONSUMERS_ 2
 
 #define QSIZE_ 2
