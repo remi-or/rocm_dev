@@ -49,9 +49,13 @@ class Grid:
     def prepare_params_enumerator(
         self, substitutions: Dict[str, List[int]], shuffle: bool, skip_to: int
     ) -> List[Dict[str, int]]:
+        list_of_values = list(itertools.product(*substitutions.values()))
+        if shuffle:
+            random.seed(0)
+            random.shuffle(list_of_values) 
+
         params_enumerator = []
-        i = 0
-        for values in itertools.product(*substitutions.values()):
+        for i, values in enumerate(list_of_values):
             params = {k: v for k, v in zip(substitutions.keys(), values)}
             if skip(params):
                 continue
@@ -59,8 +63,7 @@ class Grid:
             if i < skip_to:
                 continue
             params_enumerator.append((i, params))
-        if shuffle:
-            random.shuffle(params_enumerator) # TODO: fix seed
+        
         return params_enumerator
 
     def save_original_core(self) -> List[str]:
@@ -137,13 +140,13 @@ class Grid:
 if __name__ == "__main__":
 
     substitutions = {
-        "B_LANES_": [5],
-        "OPS": [2],
-        "A_PRODUCERS_": [2],
-        "B_PRODUCERS_": [6, 7],
-        "CONSUMERS_": [2],
-        "QSIZE_": [2],
-        "SK": [i + 1 for i in range(32)],
+        "B_LANES_": [3, 4, 5],
+        "OPS": [4],
+        "A_PRODUCERS_": [1, 2, 3],
+        "B_PRODUCERS_": [3, 4, 5, 6, 7, 8, 9],
+        "CONSUMERS_": [1, 2, 3],
+        "QSIZE_": [2, 3, 4],
+        "SK": [2, 3, 4],
     }
 
     # Parse arguments

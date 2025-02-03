@@ -283,10 +283,10 @@ void __device__ _tsr_B_producer(
         buf = buffer + index * (OP_N * WARPTILE_K);
 
         asm volatile(
-            "global_load_dwordx4 %0, %4, off offset:0\n\t" 
-            "global_load_dwordx4 %1, %4, off offset:64\n\t" 
-            "global_load_dwordx4 %2, %4, off offset:128\n\t" 
-            "global_load_dwordx4 %3, %4, off offset:192\n\t" \
+            "global_load_dwordx4 %0, %4, off offset:0   sc0 sc1 nt\n\t" 
+            "global_load_dwordx4 %1, %4, off offset:64  sc0 sc1 nt\n\t" 
+            "global_load_dwordx4 %2, %4, off offset:128 sc0 sc1 nt\n\t" 
+            "global_load_dwordx4 %3, %4, off offset:192 sc0 sc1 nt\n\t"
             : "=v"(reg0), "=v"(reg1), "=v"(reg2), "=v"(reg3)
             : "v"(src)
         );

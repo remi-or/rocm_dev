@@ -1,6 +1,7 @@
 #include "./../common.cuh"
 #include "./sparse_k.cu"
 
+#define MUL 10
 #define BATCH 10
 #define OUTD half
 
@@ -8,8 +9,8 @@ int main(int argc, char **argv) {
     HIP_CHECK( hipSetDevice(0) );
 
     // Parameters
-    const int iterations = 2500 / BATCH;
-    const int warmups = 500 / BATCH;
+    const int iterations = (MUL * 50) / BATCH;
+    const int warmups = (MUL * 100) / BATCH;
 
     assert(argc==4);
     const int m = atoi(argv[1]);
