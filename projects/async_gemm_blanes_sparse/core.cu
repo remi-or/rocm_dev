@@ -18,6 +18,7 @@
 // using uint32 = unsigned int;
 // using uint64 = unsigned long long;
 
+// Absolute constants
 #define WARPSIZE 64
 #define OP_M 8
 #define OP_N 16
@@ -26,35 +27,24 @@
 #define NB_BANKS 32
 #define CU 304
 
-#define B_LANES 3
+// User defined constants
+#define OPS 4
+#define SK 3
 
+// Infered constants
 #define WARPTILE_M OP_M
-#define WARPTILE_N (OP_N * B_LANES)
-#define WARPTILE_K OP_K
-#define PRODUCED_MASK 257
-#define G_ATOMICS true
+#define WARPTILE_K (OP_K * OPS)
 
-#define A_PRODUCERS 3
-#define B_PRODUCERS 9
-#define CONSUMERS 3
+// Parameters
+#define B_LANES_ 5
 
-#define TIED_CONSUMER false
-#define QSIZE 18
-#define SPLIT_K 8
+#define A_PRODUCERS_ 2
+#define B_PRODUCERS_ 6
+#define CONSUMERS_ 2
 
+#define QSIZE_ 2
 
-#define K_BLOCKS(k) (((k / WARPTILE_K) / SPLIT_K))
+// Macros
+#define K_BLOCKS(k, split_k) (((k / WARPTILE_K) / split_k))
 
-int inline __device__ infer_k_blocks(const int &k) {
-    if (SPLIT_K == 1) {
-        return k / WARPTILE_K;
-    } else {
-        if (blockIdx.z < SPLIT_K - 1) {
-            return K_BLOCKS(k);
-        } else {
-            return (k / WARPTILE_K) - (SPLIT_K - 1) * K_BLOCKS(k);
-        }
-    }
-}
-
-#define CDIV(a, b) ((a + b - 1) / b)
+#define CDIV(a, b) ((a + b - 1) / (b))

@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import os
 import os.path as osp
 import shutil
@@ -49,7 +49,7 @@ class Project:
         # Create new backup
         self.backup_nb = len([file for file in os.listdir(self.backup_dir) if file[-4:] == ".zip"])
 
-    def compile_and_run(self, c_file: str, arguments: str = "") -> str:
+    def compile_and_run(self, c_file: str, arguments: str = "", timeout: Optional[float] = None) -> str:
         file_path = osp.join(self.project_dir, c_file)
         name = c_file.split(".")[0]
         subprocess.check_call(f"hipcc -O3 {file_path} -save-temps -o {name}.out".split())
@@ -58,7 +58,11 @@ class Project:
         os.mkdir("./build")
         for file in new_files:
             shutil.move(file, f"./build/{file}")
-        return str(subprocess.check_output(f"./build/{name}.out {arguments}".split()))[2:-1]
+        return str(subprocess.check_output(
+            args=f"./build/{name}.out {arguments}".split(),
+            timeout=timeout
+        ))[2:-1]
+
     
     def backup(self) -> str:
         """Backups the current project and returns the hash of the backup."""

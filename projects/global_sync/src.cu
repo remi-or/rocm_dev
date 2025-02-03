@@ -6,7 +6,9 @@
 
 void __global__ globs_kernel(uint* D) {
     D[blockIdx.x] = 0;
+    asm volatile(";;# grid barrier incoming");
     cooperative_groups::this_grid().sync();
+    asm volatile(";;# grid barrier passed");
     atomicDec(&D[blockIdx.x], 1);
 }
 
