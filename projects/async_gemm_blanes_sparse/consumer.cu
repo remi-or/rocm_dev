@@ -157,17 +157,20 @@ void __device__ _tsr_consumer(
 
     // Out lane by lane
     __half2 x;
-
-    #pragma unroll
-    for (int i = 0; i < B_LANES; i++) {
-        
-        // Form the packed f16
-        x.x = reg_D[i][0];
-        x.y = reg_D[i][1];
-
-        asm volatile(
-            "global_atomic_pk_add_f16 %0, %1, off\n\t" : : "v"(&D_[i * OP_N / 2]), "v"(x)
-        );
+    if (k == k_blocks * WARPTILE_K) {
+        #pragma unroll
+        for (int i = 0; i < B_LANES; i++) {
+            x.x = reg_D[i][0];
+            x.y = reg_D[i][1];
+            D_[i * OP_N / 2] = x;
+        }
+    } else {
+        #pragma unroll
+        for (int i = 0; i < B_LANES; i++) {
+            x.x = reg_D[i][0];
+            x.y = reg_D[i][1];
+            asm volatile("global_atomic_pk_add_f16 %0, %1, off\n\t" : : "v"(&D_[i * OP_N / 2]), "v"(x));
+        }
     }
 
     // Disabled: if D is of type float
