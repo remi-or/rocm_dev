@@ -1,5 +1,6 @@
 #include "./consumer.cu"
-#include "./producer.cu"
+#include "./producers/4_half_tiles.cu"
+#include "./producers/4_full_tiles.cu"
 
 template<int B_LANES, int A_PRODUCERS, int B_PRODUCERS, int CONSUMERS, int QSIZE>
 void __global__ _tsr_kernel(
@@ -67,7 +68,7 @@ void __global__ _tsr_kernel(
 
         // A producer warp
         if (threadIdx.x < A_PRODUCERS * WARPSIZE) {
-            _tsr_A_producer<A_PRODUCERS, B_LANES, QSIZE>(
+            produce_4_half_tiles<A_PRODUCERS, B_LANES, QSIZE>(
                 A + curr_k, 
                 &A_buffer[0], 
                 &queue[0],
@@ -78,7 +79,7 @@ void __global__ _tsr_kernel(
         } 
         // B producer warp
         else if (threadIdx.x < A_PRODUCERS * WARPSIZE + B_PRODUCERS * WARPSIZE) {
-            _tsr_B_producer<B_PRODUCERS, B_LANES, QSIZE>(
+            produce_4_full_tiles<B_PRODUCERS, B_LANES, QSIZE, OP_K, OP_N>(
                 B + curr_n * k + curr_k,
                 &B_buffer[0],
                 &queue[1],
