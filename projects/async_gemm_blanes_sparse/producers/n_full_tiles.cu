@@ -26,11 +26,11 @@ void __device__ produce_n_full_tiles(
     static constexpr int Warptile_ld = TILES * OP_LEADING_SIZE;
 
     // Infer ids
-    const int thread_id = threadIdx.x % WARPSIZE;
+    const int lane_id = get_lane_id();
 
     // Infer thread position in source
-    const int curr_ld = (thread_id % Threads_per_ld) * E_per_thread;
-    const int curr_ad = thread_id / Threads_per_ld;
+    const int curr_ld = (lane_id % Threads_per_ld) * E_per_thread;
+    const int curr_ad = lane_id / Threads_per_ld;
 
     // Relocate thread in source
     source += curr_ad * k;

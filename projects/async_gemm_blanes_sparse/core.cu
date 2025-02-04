@@ -48,3 +48,7 @@
 #define K_BLOCKS(k, split_k) (((k / WARPTILE_K) / split_k))
 
 #define CDIV(a, b) ((a + b - 1) / (b))
+
+// Ids
+__device__ __forceinline__ int get_warp_id() { return threadIdx.x >> 6; }
+__device__ __forceinline__ int get_lane_id() { return threadIdx.x & 0x3f; }

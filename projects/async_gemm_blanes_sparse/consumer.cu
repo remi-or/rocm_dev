@@ -27,7 +27,7 @@ void inline __device__ consumer_smem_to_reg16(fp8* buffer, fp8x16 &reg)
 }
 
 template<int CONSUMERS, int B_LANES, int QSIZE>
-void __device__ _tsr_consumer(
+void __device__ consume_tiles(
     fp8* A_buffer,
     fp8* B_buffer,
     half* D,
@@ -43,9 +43,9 @@ void __device__ _tsr_consumer(
     const int k_blocks
 ) {
     // Compute thread position
-    const int thread_id = threadIdx.x % WARPSIZE;
-    A_buffer += (thread_id / 2) * E_P_BANK + (threadIdx.x % 2) * 32*E_P_BANK * 2;
-    B_buffer += (thread_id % 32) * 4 + (thread_id / 32) * 32*E_P_BANK * 4;
+    const int lane_id = get_lane_id();
+    A_buffer += (lane_id / 2) * E_P_BANK + (threadIdx.x % 2) * 32*E_P_BANK * 2;
+    B_buffer += (lane_id % 32) * 4 + (lane_id / 32) * 32*E_P_BANK * 4;
     const int sparsity_indices = (threadIdx.x % 2) ? 0x0000EEEE : 0x00004444;
 
     // Declare input registers
@@ -121,12 +121,12 @@ void __device__ _tsr_consumer(
     role_id = b - k_blocks;
 
     // Infer the current column in D
-    int out_n = 2 * ((thread_id % 16) / 2);
+    int out_n = 2 * ((lane_id % 16) / 2);
 
     // Finalize registers so that each threads hold 2 consecutive results in memory
     float final_scale;
     int id_to_swap = 1 - threadIdx.x % 2;
-    int src_lane = thread_id + 1 - 2 * (thread_id % 2);
+    int src_lane = lane_id + 1 - 2 * (lane_id % 2);
 
     #pragma unroll
     for (int i = 0; i < B_LANES; i++) {
@@ -145,7 +145,7 @@ void __device__ _tsr_consumer(
     }
 
     // Infer the current row in D
-    int out_m = (thread_id / 16) * 2 + (thread_id % 2);
+    int out_m = (lane_id / 16) * 2 + (lane_id % 2);
 
     // If we are in dropped rows territory, we can return now
     if (out_m + dropped_rows > WARPTILE_M -1) {

@@ -18,11 +18,11 @@ void __device__ produce_4_half_tiles(
     static constexpr int threads_per_ld = 8;
 
     // Infer ids
-    const int thread_id = threadIdx.x % WARPSIZE;
+    const int lane_id = get_lane_id();
 
     // Infer thread position in source
-    const int curr_ld = (thread_id % threads_per_ld) * elems_per_thread;
-    const int curr_ad = thread_id / threads_per_ld;
+    const int curr_ld = (lane_id % threads_per_ld) * elems_per_thread;
+    const int curr_ad = lane_id / threads_per_ld;
 
     // Relocate thread in source (and queue for B producers) // WARNING: currently assume m == 8
     src += (curr_ad + dropped_ad > WARPTILE_M - 1) ? 0 : curr_ad * k;
