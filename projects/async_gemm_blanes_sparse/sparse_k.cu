@@ -1,6 +1,8 @@
 #include "./consumer.cu"
 #include "./producers/4_half_tiles.cu"
-#include "./producers/4_full_tiles.cu"
+#include "./producers/n_full_tiles.cu"
+
+// TODO: try uint16 for the p state
 
 template<int B_LANES, int A_PRODUCERS, int B_PRODUCERS, int CONSUMERS, int QSIZE>
 void __global__ _tsr_kernel(
@@ -79,10 +81,10 @@ void __global__ _tsr_kernel(
         } 
         // B producer warp
         else if (threadIdx.x < A_PRODUCERS * WARPSIZE + B_PRODUCERS * WARPSIZE) {
-            produce_4_full_tiles<B_PRODUCERS, B_LANES, QSIZE, OP_K, OP_N>(
+            produce_n_full_tiles<B_PRODUCERS, 4, B_LANES, QSIZE, OP_K, OP_N>(
                 B + curr_n * k + curr_k,
                 &B_buffer[0],
-                &queue[1],
+                &queue[1], 1,
                 index, p_state, role_id,
                 k, k_blocks
             ); 
