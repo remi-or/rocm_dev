@@ -45,7 +45,7 @@
 #define QSIZE_ 3
 
 // Macros
-#define K_BLOCKS(k, split_k) (((k / WARPTILE_K) / split_k))
+#define NUM_WARPTILE_K(k, split_k) (((k / WARPTILE_K) / split_k))
 
 #define CDIV(a, b) ((a + b - 1) / (b))
 

@@ -21,7 +21,7 @@ void __global__ _tsr_kernel(
         queue[threadIdx.x] = 0;
     }
     // Declare shared buffer
-    static constexpr int WARPTILE_N = B_LANES* OP_N;
+    static constexpr int WARPTILE_N = B_LANES * OP_N;
     __shared__ fp8 A_buffer[WARPTILE_M * WARPTILE_K * QSIZE];
     __shared__ fp8 B_buffer[WARPTILE_N * WARPTILE_K * QSIZE];
     __syncthreads();
@@ -54,16 +54,25 @@ void __global__ _tsr_kernel(
 
     // Tiles loop
     int curr_n, curr_k, k_blocks, dropped_rows, dropped_cols;
-    const int warptile_per_row = CDIV(n, WARPTILE_N);
-    const int tiles = warptile_per_row * split_k;
-    const int tpw = max(CDIV(tiles, CU), 1);
+    const int tiles_per_row = CDIV(n, WARPTILE_N);
+    const int total_tiles = tiles_per_row * split_k;
+    const int tiles_per_block = CDIV(total_tiles, CU);
 
-    for (int warptile = (tpw * blockIdx.x); warptile < min(tiles, tpw * (blockIdx.x + 1)); warptile++) {
+    const int stop_tile = min(total_tiles, tiles_per_block * (blockIdx.x + 1));
+    for (
+        int tile = tiles_per_block * blockIdx.x;
+        tile < stop_tile; 
+        tile++
+    ) {
 
         // Compute tile position
-        curr_n = (warptile % warptile_per_row) * WARPTILE_N;
-        curr_k = (warptile / warptile_per_row) * WARPTILE_K * K_BLOCKS(k, split_k);
-        k_blocks = ((warptile / warptile_per_row) == (split_k - 1)) ? (k / WARPTILE_K) - (split_k - 1) * K_BLOCKS(k, split_k) : K_BLOCKS(k, split_k);
+        curr_n = (tile % tiles_per_row) * WARPTILE_N;
+        curr_k = (tile / tiles_per_row) * WARPTILE_K * NUM_WARPTILE_K(k, split_k);
+        k_blocks = (
+            (tile / tiles_per_row) == (split_k - 1)
+            ? (k / WARPTILE_K) - (split_k - 1) * NUM_WARPTILE_K(k, split_k) 
+            : NUM_WARPTILE_K(k, split_k)
+        );
 
         // Account for column overflow
         dropped_rows = max(0, 0      + WARPTILE_M - m);
