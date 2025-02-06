@@ -6,7 +6,7 @@
 #define OUTD half
 
 int main(int argc, char **argv) {
-    HIP_CHECK( hipSetDevice(0) );
+    HIP_CHECK( hipSetDevice(7) );
 
     // Parameters
     const int warmups = (MUL * 100) / BATCH;
