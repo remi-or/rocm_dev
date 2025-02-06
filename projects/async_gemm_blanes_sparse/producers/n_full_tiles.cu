@@ -1,13 +1,12 @@
-#include "./../core.cu" 
+#include "./../utils.cuh" 
 
 // WARNING / TODO : this producer always skips cache
 template<
     int PRODUCERS,
-    int TILES,
     int LANES,
     int QSIZE,
-    int OP_LEADING_SIZE,  // This is the size of the operation in the contiguous axis
-    int OP_AUXILIARY_SIZE // This is the size of the operation in the strided axis
+    int OP_MN, // This is the size of the operation in the strided axis
+    bool REUSE
 >
 void __device__ produce_n_full_tiles(
     const fp8* __restrict__ source,
@@ -20,16 +19,19 @@ void __device__ produce_n_full_tiles(
     const int k,
     const int k_blocks
 ) {
-    static constexpr int E_per_thread = 16;
-    static constexpr int E_per_bank = 4;
-    static constexpr int Threads_per_ld = 4;
-    static constexpr int Warptile_ld = TILES * OP_LEADING_SIZE;
+    static constexpr int E_PER_THREADS = 16;
+    static constexpr int E_PER_BANK = 4;
+
+    static constexpr int TILES_PER_LOADS = (WARPSIZE * E_PER_THREADS) / (OP_K * OP_MN); // = 32*16/16*64 = 2
+    static constexpr int LOADS = OPS / TILES_PER_LOADS;
+
+    static constexpr int Threads_per_ld = (OP_K * TILES_PER_LOADS) / E_PER_THREADS;
 
     // Infer ids
     const int lane_id = get_lane_id();
 
     // Infer thread position in source
-    const int curr_ld = (lane_id % Threads_per_ld) * E_per_thread;
+    const int curr_ld = (lane_id % Threads_per_ld) * E_PER_THREADS;
     const int curr_ad = lane_id / Threads_per_ld;
 
     // Relocate thread in source
@@ -37,12 +39,12 @@ void __device__ produce_n_full_tiles(
     source += curr_ld;
 
     // Relocate thread in buffer
-    buffer += E_per_bank * curr_ad;
-    buffer += (curr_ld / 32) * 32 * E_per_bank * 4;
-    buffer += (curr_ld % 32 == 16) ? 16 * E_per_bank : 0;
+    buffer += E_PER_BANK * curr_ad;
+    buffer += (curr_ld / 32) * 32 * E_PER_BANK * 4;
+    buffer += (curr_ld % 32 >= 16) ? 16 * E_PER_BANK : 0;
 
     // Prepare registers
-    fp8 reg[TILES][E_per_thread];
+    fp8 reg[LOADS][E_PER_THREADS];
 
     // K-wise loop
     const fp8* src;
@@ -53,35 +55,11 @@ void __device__ produce_n_full_tiles(
 
         // Account for cyclic queue
         index -= (index >= QSIZE * LANES) ? QSIZE * LANES : 0;
-        src = source + (b / LANES) * Warptile_ld + (b % LANES) * OP_AUXILIARY_SIZE * k;
-        buf = buffer + index * (OP_AUXILIARY_SIZE * Warptile_ld);
+        src = source + (b / LANES) * WARPTILE_K + (b % LANES) * OP_MN * k;
+        buf = buffer + index * (OP_MN * WARPTILE_K);
 
         // Start loading all data
-        if constexpr (TILES == 1) {
-            asm volatile(
-                "global_load_dwordx4 %0, %1, off offset:0   sc0 sc1 nt\n\t" 
-                : "=v"(reg[0])
-                : "v"(src)
-            );
-        }
-        if constexpr (TILES == 2) {
-            asm volatile(
-                "global_load_dwordx4 %0, %2, off offset:0   sc0 sc1 nt\n\t" 
-                "global_load_dwordx4 %1, %2, off offset:64  sc0 sc1 nt\n\t" 
-                : "=v"(reg[0]), "=v"(reg[1])
-                : "v"(src)
-            );
-        }
-        if constexpr (TILES == 4) {
-            asm volatile(
-                "global_load_dwordx4 %0, %4, off offset:0   sc0 sc1 nt\n\t" 
-                "global_load_dwordx4 %1, %4, off offset:64  sc0 sc1 nt\n\t" 
-                "global_load_dwordx4 %2, %4, off offset:128 sc0 sc1 nt\n\t" 
-                "global_load_dwordx4 %3, %4, off offset:192 sc0 sc1 nt\n\t"
-                : "=v"(reg[0]), "=v"(reg[1]), "=v"(reg[2]), "=v"(reg[3])
-                : "v"(src)
-            );
-        }
+        load_from_gmem_to_reg_no_waitcnt<LOADS, REUSE>(src, reg);
 
         // Wait for buffer to be consumed
         while (queue[2 * q_stride * index] != p_state) {
@@ -90,22 +68,22 @@ void __device__ produce_n_full_tiles(
 
         // Fill N-tile buffer
         #pragma unroll
-        for (int tile = 0; tile < TILES; tile++) {
+        for (int load = 0; load < LOADS; load++) {
 
             // Wait for tile to be loaded in registers
-            switch (TILES - tile - 1) {
+            switch (LOADS - load - 1) {
                 case 0: asm volatile("s_waitcnt vmcnt(0)"); break;
                 case 1: asm volatile("s_waitcnt vmcnt(1)"); break;
                 case 2: asm volatile("s_waitcnt vmcnt(2)"); break;
                 case 3: asm volatile("s_waitcnt vmcnt(3)"); break;
-            }
+            } // TODO: find a way to factor this out
 
             // Place tile in shared memory
             #pragma unroll
-            for (int i = 0; i < E_per_thread / E_per_bank; i++) {
+            for (int line = 0; line < E_PER_THREADS / E_PER_BANK; line++) {
                 #pragma unroll
-                for (int j = 0; j < E_per_bank; j++) {
-                    buf[NB_BANKS * E_per_bank * i + j + OP_LEADING_SIZE * OP_AUXILIARY_SIZE * tile] = reg[tile][E_per_bank * i + j];
+                for (int elem = 0; elem < E_PER_BANK; elem++) {
+                    buf[load * (WARPSIZE * E_PER_THREADS) + line * (NB_BANKS * E_PER_BANK) + elem] = reg[load][E_PER_BANK * line + elem];
                 }
             }
         }

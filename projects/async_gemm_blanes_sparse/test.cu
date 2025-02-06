@@ -60,7 +60,8 @@ int main(int argc, char **argv) {
     //     hB[i] = __hip_cvt_float_to_fp8(1.0f, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
     // }
 
-    random_host_tensor<float>(hScale_tensor, 1); 
+    random_host_tensor<float>(hScale_tensor, 1);
+    // hScale_tensor[0] = 1;
     host_tiled_sum_reduce<OUTD>(hA, hB, host_ref, hScale_tensor, m, n, k);
 
     // Device tensors

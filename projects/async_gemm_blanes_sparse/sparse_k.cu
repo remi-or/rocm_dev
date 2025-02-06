@@ -1,4 +1,4 @@
-#include "./consumer.cu"
+#include "./consumers/consumers.cuh"
 #include "./producers/4_half_tiles.cu"
 #include "./producers/n_full_tiles.cu"
 
@@ -81,18 +81,17 @@ void __global__ _tsr_kernel(
 
         // A producer warp
         if (warp_id < A_PRODUCERS) {
-            produce_4_half_tiles<A_PRODUCERS, B_LANES, QSIZE>(
-                A + curr_k, 
-                &A_buffer[0], 
-                &queue[0],
+            produce_n_full_tiles<A_PRODUCERS, 1, QSIZE, OP_M, true>(
+                A + curr_k,
+                &A_buffer[0],
+                &queue[0], B_LANES,
                 index, p_state, role_id,
-                dropped_rows,
                 k, k_blocks
-            ); 
+            );
         } 
         // B producer warp
         else if (warp_id < A_PRODUCERS + B_PRODUCERS) {
-            produce_n_full_tiles<B_PRODUCERS, 4, B_LANES, QSIZE, OP_K, OP_N>(
+            produce_n_full_tiles<B_PRODUCERS, B_LANES, QSIZE, OP_N, true>( // TODO: investigate the reuse parameter forB
                 B + curr_n * k + curr_k,
                 &B_buffer[0],
                 &queue[1], 1,
@@ -102,7 +101,7 @@ void __global__ _tsr_kernel(
         }
         // Consumers warp
         else if (warp_id < A_PRODUCERS + B_PRODUCERS + CONSUMERS) {
-            consume_tiles<CONSUMERS, B_LANES, QSIZE>(
+            consume_tiles_dense_16x16x32<CONSUMERS, B_LANES, QSIZE>(
                 &A_buffer[0],
                 &B_buffer[0],
                 D + curr_n,

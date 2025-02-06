@@ -11,8 +11,10 @@ from project_class import Project
 
     
 def skip(params: Dict[str, int]) -> bool:
+    lane_size = 16
+    op_k = 32
     # Compute the amount of shared memory (smem) needed
-    smem = params["QSIZE_"] * ((16 * params["B_LANES_"] + 8) * 64 * params["OPS"] + params["B_LANES_"] / 2)
+    smem = params["QSIZE_"] * ((lane_size * params["B_LANES_"] + lane_size) * op_k * params["OPS"] + params["B_LANES_"] / 2)
     max_smem = 65536
     # Return True if we need to skip the benchmark of these parameters
     return any([
@@ -140,13 +142,13 @@ class Grid:
 if __name__ == "__main__":
 
     substitutions = {
-        "B_LANES_": [3, 4, 5],
-        "OPS": [4],
-        "A_PRODUCERS_": [1, 2, 3],
-        "B_PRODUCERS_": [3, 4, 5, 6, 7, 8, 9],
-        "CONSUMERS_": [1, 2, 3],
-        "QSIZE_": [2, 3, 4],
-        "SK": [2, 3, 4],
+        "B_LANES_": [2, 3, 4, 5],
+        "OPS": [8],
+        "A_PRODUCERS_": [2, 3, 4],
+        "B_PRODUCERS_": [4, 5, 6, 7, 8, 9, 10, 11, 12],
+        "CONSUMERS_": [2, 3, 4],
+        "QSIZE_": [3, 4, 5],
+        "SK": [1, 2, 3, 4, 5],
     }
 
     # Parse arguments

@@ -1,33 +1,5 @@
-#include "./core.cu"
-
-void inline __device__ consumer_smem_to_reg8(fp8* buffer, fp8x8 &reg) 
-{
-    // 32 bits load from the current bank
-    #pragma unroll
-    for (int i = 0; i < 4; i++) {
-        reg[i] = buffer[i];
-    }
-    // 32 bits load from the same bank, hopefully extension of the first load
-    #pragma unroll
-    for (int i = 0; i < 4; i++) {
-        reg[4 + i] = buffer[i + 32*E_P_BANK];
-    }
-}
-
-void inline __device__ consumer_smem_to_reg16(fp8* buffer, fp8x16 &reg) 
-{
-    #pragma unroll
-    for (int i = 0; i < 4; i++) { reg[i     ] = buffer[i                   ]; }
-    #pragma unroll
-    for (int i = 0; i < 4; i++) { reg[i +  4] = buffer[i +     32*E_P_BANK]; }
-    #pragma unroll
-    for (int i = 0; i < 4; i++) { reg[i +  8] = buffer[i + 2 * 32*E_P_BANK]; }
-    #pragma unroll
-    for (int i = 0; i < 4; i++) { reg[i + 12] = buffer[i + 3 * 32*E_P_BANK]; }
-}
-
 template<int CONSUMERS, int B_LANES, int QSIZE>
-void __device__ consume_tiles(
+void __device__ consume_tiles_dense_16x16x32(
     fp8* A_buffer,
     fp8* B_buffer,
     half* D,
@@ -42,21 +14,31 @@ void __device__ consume_tiles(
     const int k,
     const int k_blocks
 ) {
+    static constexpr int E_per_thread = 16;
+    static constexpr int E_per_bank = 4;
+    static constexpr int WARPTILE_N = OP_N * B_LANES;
+
     // Compute thread position
     const int lane_id = get_lane_id();
-    A_buffer += (lane_id / 2) * E_P_BANK + (threadIdx.x % 2) * 32*E_P_BANK * 2;
-    B_buffer += (lane_id % 32) * 4 + (lane_id / 32) * 32*E_P_BANK * 4;
-    const int sparsity_indices = (threadIdx.x % 2) ? 0x0000EEEE : 0x00004444;
+
+    A_buffer += (lane_id % 16) * E_per_bank + (lane_id / 32) * 16 * E_per_bank;
+    A_buffer += (lane_id % 32 >= 16) ? NB_BANKS * E_per_bank * 2 : 0;
+
+    B_buffer += (lane_id % 16) * E_per_bank + (lane_id / 32) * 16 * E_per_bank;
+    B_buffer += (lane_id % 32 >= 16) ? NB_BANKS * E_per_bank * 2 : 0;
 
     // Declare input registers
     fp8x8 reg_A[OPS];
-    fp8x16 reg_B[OPS];
+    fp8x8 reg_B[OPS];
 
     // Initialize output registers
     f32x4 reg_D[B_LANES];
     #pragma unroll
-    for (int i = 0; i < (B_LANES); i++) {
-        reg_D[i][0] = 0.0f; reg_D[i][1] = 0.0f; reg_D[i][2] = 0.0f; reg_D[i][3] = 0.0f;
+    for (int i = 0; i < B_LANES; i++) {
+        reg_D[i][0] = 0.0f; 
+        reg_D[i][1] = 0.0f; 
+        reg_D[i][2] = 0.0f; 
+        reg_D[i][3] = 0.0f;
     }
 
     // K-wise loop
@@ -68,7 +50,7 @@ void __device__ consume_tiles(
         // Account for cyclic queue
         index -= (index >= QSIZE) ? QSIZE : 0;
         A_offs_buff = A_buffer + index * (WARPTILE_M * WARPTILE_K);
-        B_offs_buff = B_buffer + index * ((OP_N * B_LANES) * WARPTILE_K);
+        B_offs_buff = B_buffer + index * (WARPTILE_N * WARPTILE_K);
 
         // Wait for A buffer to be filled
         while (queue[2 * B_LANES * index] != p_state) {
@@ -77,7 +59,7 @@ void __device__ consume_tiles(
         // Load A buffer
         #pragma unroll
         for (int op = 0; op < OPS; op++) {
-            consumer_smem_to_reg8(A_offs_buff + (op * OP_M * OP_K), reg_A[op]);
+            consumer_smem_to_reg(A_offs_buff + (op * OP_M * OP_K), reg_A[op]);
         }
         // Mark A buffer as consumed
         queue[2 * B_LANES * index] = p_state + 1;
@@ -93,7 +75,7 @@ void __device__ consume_tiles(
             // Load B buffer
             #pragma unroll
             for (int op = 0; op < OPS; op++) {
-                consumer_smem_to_reg16(B_offs_buff + (lane * OP_N * WARPTILE_K) + (op * OP_N * OP_K), reg_B[op]);
+                consumer_smem_to_reg(B_offs_buff + (lane * OP_N * WARPTILE_K) + (op * OP_N * OP_K), reg_B[op]);
             }
             // Mark B buffer as consumed
             queue[2 * (B_LANES * index + lane) + 1] = p_state + 1;
@@ -101,12 +83,13 @@ void __device__ consume_tiles(
             // Consume registers
             #pragma unroll
             for (int op = 0; op < OPS; op++) {
-                reg_D[lane] = __builtin_amdgcn_smfmac_f32_16x16x64_fp8_fp8(
-                    reinterpret_cast<fp8_4x2>(reg_A[op]),
-                    reinterpret_cast<fp8_4x4>(reg_B[op]),
+                reg_D[lane] = __builtin_amdgcn_mfma_f32_16x16x32_fp8_fp8(
+                    reinterpret_cast<long>(reg_A[op]),
+                    reinterpret_cast<long>(reg_B[op]),
                     reg_D[lane], 
-                    sparsity_indices, // src2
-                    7, 1 // cbsz, abid
+                    0, // src2
+                    0, // cbsz
+                    0  // abid
                 );
             }
         }
@@ -125,27 +108,26 @@ void __device__ consume_tiles(
 
     // Finalize registers so that each threads hold 2 consecutive results in memory
     float final_scale;
-    int id_to_swap = 1 - threadIdx.x % 2;
+    int id_to_swap = 1 - lane_id % 2;
     int src_lane = lane_id + 1 - 2 * (lane_id % 2);
 
     #pragma unroll
     for (int i = 0; i < B_LANES; i++) {
 
-        // Fusing
-        reg_D[i][0] = reg_D[i][0] + reg_D[i][1];
-        reg_D[i][1] = reg_D[i][2] + reg_D[i][3];
-
         // Scaling
         final_scale = (out_n + i * OP_N) >= dropped_cols ? scale : 0.0f;
         reg_D[i][0] *= final_scale;
         reg_D[i][1] *= final_scale;
+        reg_D[i][2] *= final_scale;
+        reg_D[i][3] *= final_scale;
 
         // Swapping 
-        reg_D[i][id_to_swap] = __shfl(reg_D[i][id_to_swap], src_lane);
+        reg_D[i][id_to_swap    ] = __shfl(reg_D[i][id_to_swap    ], src_lane);
+        reg_D[i][id_to_swap + 2] = __shfl(reg_D[i][id_to_swap + 2], src_lane);
     }
 
     // Infer the current row in D
-    int out_m = (lane_id / 16) * 2 + (lane_id % 2);
+    int out_m = (lane_id / 16) * 4 + (lane_id % 2);
 
     // If we are in dropped rows territory, we can return now
     if (out_m + dropped_rows > WARPTILE_M -1) {
@@ -157,21 +139,18 @@ void __device__ consume_tiles(
 
     // Out lane by lane
     __half2 x;
-    if (k == k_blocks * WARPTILE_K) {
-        #pragma unroll
-        for (int i = 0; i < B_LANES; i++) {
-            x.x = reg_D[i][0];
-            x.y = reg_D[i][1];
-            D_[i * OP_N / 2] = x;
-        }
-    } else {
-        #pragma unroll
-        for (int i = 0; i < B_LANES; i++) {
-            x.x = reg_D[i][0];
-            x.y = reg_D[i][1];
-            asm volatile("global_atomic_pk_add_f16 %0, %1, off\n\t" : : "v"(&D_[i * OP_N / 2]), "v"(x));
-        }
+    // TODO: non-atomic exit path if split-k is equal to 1
+    #pragma unroll
+    for (int lane = 0; lane < B_LANES; lane++) {
+        x.x = reg_D[lane][0];
+        x.y = reg_D[lane][1];
+        asm volatile("global_atomic_pk_add_f16 %0, %1, off\n\t" : : "v"(&D_[lane * (OP_N / 2)]), "v"(x));
+
+        x.x = reg_D[lane][2];
+        x.y = reg_D[lane][3];
+        asm volatile("global_atomic_pk_add_f16 %0, %1, off\n\t" : : "v"(&D_[lane * (OP_N / 2) + n]), "v"(x));
     }
+    // }
 
     // Disabled: if D is of type float
     // // Relocate on D
