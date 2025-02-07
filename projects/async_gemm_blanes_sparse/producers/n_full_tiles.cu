@@ -83,9 +83,10 @@ void __device__ produce_n_full_tiles(
             for (int line = 0; line < E_PER_THREADS / E_PER_BANK; line++) {
                 #pragma unroll
                 for (int elem = 0; elem < E_PER_BANK; elem++) {
-                    buf[load * (WARPSIZE * E_PER_THREADS) + line * (NB_BANKS * E_PER_BANK) + elem] = reg[load][E_PER_BANK * line + elem];
+                    buf[line * (NB_BANKS * E_PER_BANK) + elem] = reg[load][E_PER_BANK * line + elem];
                 }
             }
+            buf += WARPSIZE * E_PER_THREADS;
         }
 
         // Mark buffer as filled

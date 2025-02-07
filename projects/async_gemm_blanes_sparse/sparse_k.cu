@@ -91,7 +91,8 @@ void __global__ _tsr_kernel(
         } 
         // B producer warp
         else if (warp_id < A_PRODUCERS + B_PRODUCERS) {
-            produce_n_full_tiles<B_PRODUCERS, B_LANES, QSIZE, OP_N, true>( // TODO: investigate the reuse parameter forB
+            // TODO: investigate the reuse parameter forB (true = faster but goes wrong because no sc1)
+            produce_n_full_tiles<B_PRODUCERS, B_LANES, QSIZE, OP_N, false>(
                 B + curr_n * k + curr_k,
                 &B_buffer[0],
                 &queue[1], 1,

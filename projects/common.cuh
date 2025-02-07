@@ -100,7 +100,7 @@ void random_host_tensor(fp8* &x, size_t size) {
     float y;
     for (size_t i = 0; i < size; i++) {
         y = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-        x[i] = __hip_cvt_float_to_fp8(y - 0.5f, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
+        x[i] = __hip_cvt_float_to_fp8(2 * (y - 0.5f), __HIP_SATFINITE, __HIP_E4M3_FNUZ);
     }
 }
 

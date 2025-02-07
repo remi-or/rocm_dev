@@ -135,7 +135,8 @@ void __device__ consume_tiles_dense_16x16x32(
     }
 
     // Relocate on D
-    __half2* D_ = reinterpret_cast<__half2*>(D) + (out_m * n + out_n) / 2;
+    __half2* D_ = reinterpret_cast<__half2*>(D + (out_m * n + out_n));
+    // __half2* D_ = reinterpret_cast<__half2*>(D) + (out_m * n + out_n) / 2;
 
     // Out lane by lane
     __half2 x;
