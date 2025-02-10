@@ -33,31 +33,12 @@ void __global__ _skinny_gemm_kernel(
     __shared__ fp8 B_buffer[WARPTILE_N * WARPTILE_K * QSIZE];
     __syncthreads();
 
-
-    // Infer index and p-state
-    int role_id;
-    int index;
-    int p_state;
-    
-    // A producer warp
-    int warp_id = get_warp_id();
-    if (warp_id < A_PRODUCERS) {
-        role_id = warp_id;
-        index = (OPS == 1 ? 2 : 1) * role_id;
-        p_state = 0;
-    } 
-    // B producer warp
-    else if (warp_id < A_PRODUCERS + B_PRODUCERS) {
-        role_id = warp_id - A_PRODUCERS;
-        index = role_id;
-        p_state = 0;
-    }
-    // Consumers warp
-    else {
-        role_id = warp_id - (A_PRODUCERS + B_PRODUCERS);
-        index = role_id;
-        p_state = 1;
-    }
+    // Infer warp-specialization-related variables
+    const int warp_id = get_warp_id();
+    int role_id = (warp_id < A_PRODUCERS) ? warp_id : (warp_id - A_PRODUCERS);
+        role_id = (warp_id < A_PRODUCERS + B_PRODUCERS) ? role_id : (role_id - B_PRODUCERS);
+    int index = role_id;
+    int p_state = (warp_id >= A_PRODUCERS + B_PRODUCERS);
 
     // Tiles loop
     int curr_n, curr_k, k_blocks, dropped_rows, dropped_cols;
