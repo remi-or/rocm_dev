@@ -101,9 +101,8 @@ void __global__ _skinny_gemm_kernel(
                 scale_tensor[0],
                 &queue[0],
                 index, p_state, role_id,
-                n, 
                 dropped_rows, dropped_cols,
-                k, k_blocks
+                n, k, k_blocks
             );
         }
     }    

@@ -12,9 +12,9 @@ void __device__ consume_tiles_sparse_16x16x64(
     int &index,
     int &p_state,
     int &role_id,
-    const int n,
     const int dropped_rows,
     const int dropped_cols,
+    const int n,
     const int k,
     const int k_blocks
 );
@@ -29,9 +29,9 @@ void __device__ consume_tiles_dense_16x16x32(
     int &index,
     int &p_state,
     int &role_id,
-    const int n,
     const int dropped_rows,
     const int dropped_cols,
+    const int n,
     const int k,
     const int k_blocks
 );
