@@ -67,6 +67,7 @@ void __global__ _skinny_gemm_kernel(
         // Account for column overflow
         dropped_rows = max(0, 0      + WARPTILE_M - m);
         dropped_cols = max(0, curr_n + WARPTILE_N - n);
+        curr_n -= dropped_cols; // make sure we are in the bounds of B
 
         // A producer warp
         if (warp_id < A_PRODUCERS) {
@@ -87,7 +88,7 @@ void __global__ _skinny_gemm_kernel(
                 &B_buffer[0],
                 &queue[1], 1,
                 index, p_state, role_id,
-                dropped_cols,
+                0, // for B, we simply offset the tiles to not load OOB
                 k, k_blocks
             ); 
         }
@@ -96,7 +97,7 @@ void __global__ _skinny_gemm_kernel(
             consume_tiles_dense_16x16x32<CONSUMERS, B_LANES, QSIZE>(
                 &A_buffer[0],
                 &B_buffer[0],
-                D + curr_n - dropped_cols,
+                D + curr_n,
                 scale_tensor[0],
                 &queue[0],
                 index, p_state, role_id,

@@ -163,15 +163,15 @@ void __device__ consume_tiles_dense_16x16x32(
 
 
 
-    // TODO: non-atomic exit path if split-k is equal to 1
+// TODO: non-atomic exit path if split-k is equal to 1
 
-    // Disabled: if D is of type float
-    // // Relocate on D
-    // D += (out_m * n + out_n);
+// Disabled: if D is of type float
+// // Relocate on D
+// D += (out_m * n + out_n);
 
-    // // Out lane by lane
-    // #pragma unroll
-    // for (int i = 0; i < B_LANES; i++) {
-    //     atomicAdd(&D[0 + i*OP_N], reg_D[i][0]);
-    //     atomicAdd(&D[1 + i*OP_N], reg_D[i][1]);
-    // }
+// // Out lane by lane
+// #pragma unroll
+// for (int i = 0; i < B_LANES; i++) {
+//     atomicAdd(&D[0 + i*OP_N], reg_D[i][0]);
+//     atomicAdd(&D[1 + i*OP_N], reg_D[i][1]);
+// }
