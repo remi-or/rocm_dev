@@ -1,5 +1,5 @@
 #include "./../common.cuh"
-#include "./sparse_k.cu"
+#include "./skinny_gemm.cu"
 
 #define MUL 10
 #define BATCH 5

@@ -8,6 +8,7 @@
 // #include <hip/hip_fp8.h>
 // #include <torch/all.h>
 // using fp8 = __hip_fp8_storage_t;
+// using fp8_4 = int;
 // using fp8x8 = __attribute__( (__vector_size__(8 * sizeof(fp8)) )) fp8;
 // using fp8x16 = __attribute__( (__vector_size__(16 * sizeof(fp8)) )) fp8;
 // using fp8_4x2 = __attribute__( (__vector_size__(2 * sizeof(int)) )) int;
@@ -36,7 +37,6 @@
 
 // Macros
 #define NUM_WARPTILE_K(k, split_k) (((k / WARPTILE_K) / split_k))
-
 #define CDIV(a, b) ((a + b - 1) / (b))
 
 // Ids
