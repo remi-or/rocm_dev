@@ -56,6 +56,8 @@ void __global__ _skinny_gemm_kernel(
         // Compute tile position
         curr_n = (tile % tiles_per_row) * WARPTILE_N;
         curr_k = (tile / tiles_per_row) * WARPTILE_K * NUM_WARPTILE_K(k, split_k);
+
+        // Compute tile's K blocks (number of blocks along the K axis)
         k_blocks = (
             (tile / tiles_per_row) == (split_k - 1)
             ? (k / WARPTILE_K) - (split_k - 1) * NUM_WARPTILE_K(k, split_k) 
@@ -65,7 +67,6 @@ void __global__ _skinny_gemm_kernel(
         // Account for column overflow
         dropped_rows = max(0, 0      + WARPTILE_M - m);
         dropped_cols = max(0, curr_n + WARPTILE_N - n);
-        curr_n -= dropped_cols;
 
         // A producer warp
         if (warp_id < A_PRODUCERS) {
@@ -74,9 +75,10 @@ void __global__ _skinny_gemm_kernel(
                 &A_buffer[0],
                 &queue[0], B_LANES,
                 index, p_state, role_id,
+                dropped_rows,
                 k, k_blocks
             );
-        } 
+        }
         // B producer warp
         else if (warp_id < A_PRODUCERS + B_PRODUCERS) {
             // TODO: investigate the reuse parameter forB (true = faster but goes wrong because no sc1)
@@ -85,6 +87,7 @@ void __global__ _skinny_gemm_kernel(
                 &B_buffer[0],
                 &queue[1], 1,
                 index, p_state, role_id,
+                dropped_cols,
                 k, k_blocks
             ); 
         }
@@ -93,7 +96,7 @@ void __global__ _skinny_gemm_kernel(
             consume_tiles_dense_16x16x32<CONSUMERS, B_LANES, QSIZE>(
                 &A_buffer[0],
                 &B_buffer[0],
-                D + curr_n,
+                D + curr_n - dropped_cols,
                 scale_tensor[0],
                 &queue[0],
                 index, p_state, role_id,

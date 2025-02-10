@@ -26,6 +26,7 @@ void __device__ consume_tiles_dense_16x16x32(
     // Compute thread position
     const int lane_id = get_lane_id();
 
+    // Relocate in buffers
     A_buffer += (lane_id % 16) * E_PER_BANK + (lane_id / 32) * 16 * E_PER_BANK;
     A_buffer += (lane_id % 32 >= 16) ? NB_BANKS * E_PER_BANK * 2 : 0;
 
@@ -47,15 +48,13 @@ void __device__ consume_tiles_dense_16x16x32(
     }
 
     // K-wise loop
-    fp8 *A_offs_buff, *B_offs_buff;
     int b = role_id;
-
     while (b < k_blocks) {
 
         // Account for cyclic queue
         index -= (index >= QSIZE) ? QSIZE : 0;
-        A_offs_buff = A_buffer + index * (WARPTILE_M * WARPTILE_K);
-        B_offs_buff = B_buffer + index * (WARPTILE_N * WARPTILE_K);
+        fp8* A_offs_buff = A_buffer + index * (WARPTILE_M * WARPTILE_K);
+        fp8* B_offs_buff = B_buffer + index * (WARPTILE_N * WARPTILE_K);
 
         // Wait for A buffer to be filled
         while (queue[2 * B_LANES * index] != p_state) {
@@ -134,29 +133,37 @@ void __device__ consume_tiles_dense_16x16x32(
     // Infer the current row in D
     int out_m = (lane_id / 16) * 4 + (lane_id % 2);
 
-    // If we are in dropped rows territory, we can return now
-    if (out_m + dropped_rows > WARPTILE_M -1) {
-        return ;
-    }
-
+    // Quit if we are in dropped rows territory
+    if (out_m + dropped_rows >= WARPTILE_M) { return; }
     // Relocate on D
     __half2* D_ = reinterpret_cast<__half2*>(D + (out_m * n + out_n));
-    // __half2* D_ = reinterpret_cast<__half2*>(D) + (out_m * n + out_n) / 2;
 
-    // Out lane by lane
+    // Out lane by lane for the first exit row
     __half2 x;
-    // TODO: non-atomic exit path if split-k is equal to 1
     #pragma unroll
     for (int lane = 0; lane < B_LANES; lane++) {
         x.x = reg_D[lane][0];
         x.y = reg_D[lane][1];
         asm volatile("global_atomic_pk_add_f16 %0, %1, off\n\t" : : "v"(&D_[lane * (OP_N / 2)]), "v"(x));
+    }
 
+    // Quit if the second exit row is in dropped rows territory
+    if (out_m + 2 + dropped_rows >= WARPTILE_M) { return; }
+    // Advance to the second exit row (which is two rows after the first one)
+    D_ += n;
+
+    // Out lane by lane for the second exit row
+    #pragma unroll
+    for (int lane = 0; lane < B_LANES; lane++) {
         x.x = reg_D[lane][2];
         x.y = reg_D[lane][3];
-        asm volatile("global_atomic_pk_add_f16 %0, %1, off\n\t" : : "v"(&D_[lane * (OP_N / 2) + n]), "v"(x));
+        asm volatile("global_atomic_pk_add_f16 %0, %1, off\n\t" : : "v"(&D_[lane * (OP_N / 2)]), "v"(x));
     }
-    // }
+}
+
+
+
+    // TODO: non-atomic exit path if split-k is equal to 1
 
     // Disabled: if D is of type float
     // // Relocate on D
@@ -168,4 +175,3 @@ void __device__ consume_tiles_dense_16x16x32(
     //     atomicAdd(&D[0 + i*OP_N], reg_D[i][0]);
     //     atomicAdd(&D[1 + i*OP_N], reg_D[i][1]);
     // }
-}

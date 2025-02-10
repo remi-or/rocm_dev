@@ -17,6 +17,7 @@ void __device__ produce_n_full_tiles(
     int &index,
     int &p_state,
     int &role_id,
+    int dropped_mn, // number of rows or columns that are out of bounds for this producer
     const int k,
     const int k_blocks
 ) {
@@ -25,7 +26,7 @@ void __device__ produce_n_full_tiles(
     static constexpr int E_PER_BANK = 4;
     static constexpr int WARPTILE_K = OP_K * OPS;
 
-    static constexpr int TILES_PER_LOADS = (WARPSIZE * E_PER_THREAD) / (OP_K * OP_MN); // = 32*16/16*64 = 2
+    static constexpr int TILES_PER_LOADS = (WARPSIZE * E_PER_THREAD) / (OP_K * OP_MN);
     static constexpr int LOADS = OPS / TILES_PER_LOADS;
     static constexpr int THREADS_PER_LD = (OP_K * TILES_PER_LOADS) / E_PER_THREAD;
 
@@ -35,6 +36,7 @@ void __device__ produce_n_full_tiles(
     // Infer thread position in source
     const int curr_ld = (lane_id % THREADS_PER_LD) * E_PER_THREAD;
     const int curr_ad = lane_id / THREADS_PER_LD;
+    dropped_mn += curr_ad;
 
     // Relocate thread in source
     source += curr_ad * k;
@@ -57,7 +59,13 @@ void __device__ produce_n_full_tiles(
 
         // Account for cyclic queue
         index -= (index >= QSIZE * LANES) ? QSIZE * LANES : 0;
-        src = source + (b / LANES) * WARPTILE_K + (b % LANES) * OP_MN * k;
+
+        // Relocate in source, accounting for dropped rows or cols
+        int offset_mn = (b % LANES) * OP_MN;
+        offset_mn = (offset_mn + dropped_mn >= OP_MN * LANES) ? 0 : offset_mn;
+        src = source + (b / LANES) * WARPTILE_K + offset_mn * k;
+
+        // Relocate in buffer without accounting for drops
         buf = buffer + index * (OP_MN * WARPTILE_K);
 
         // Start loading all data
