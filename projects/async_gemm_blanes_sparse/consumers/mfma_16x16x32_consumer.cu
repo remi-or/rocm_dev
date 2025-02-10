@@ -14,18 +14,23 @@ void __device__ consume_tiles_dense_16x16x32(
     const int k,
     const int k_blocks
 ) {
-    static constexpr int E_per_thread = 16;
-    static constexpr int E_per_bank = 4;
+    // Compile-time constants
+    static constexpr int E_PER_BANK = 4;
+    static constexpr int OP_M = 16;
+    static constexpr int OP_N = 16;
+    static constexpr int OP_K = 32;
+    static constexpr int WARPTILE_M = OP_M;
     static constexpr int WARPTILE_N = OP_N * B_LANES;
+    static constexpr int WARPTILE_K = OP_K * OPS;
 
     // Compute thread position
     const int lane_id = get_lane_id();
 
-    A_buffer += (lane_id % 16) * E_per_bank + (lane_id / 32) * 16 * E_per_bank;
-    A_buffer += (lane_id % 32 >= 16) ? NB_BANKS * E_per_bank * 2 : 0;
+    A_buffer += (lane_id % 16) * E_PER_BANK + (lane_id / 32) * 16 * E_PER_BANK;
+    A_buffer += (lane_id % 32 >= 16) ? NB_BANKS * E_PER_BANK * 2 : 0;
 
-    B_buffer += (lane_id % 16) * E_per_bank + (lane_id / 32) * 16 * E_per_bank;
-    B_buffer += (lane_id % 32 >= 16) ? NB_BANKS * E_per_bank * 2 : 0;
+    B_buffer += (lane_id % 16) * E_PER_BANK + (lane_id / 32) * 16 * E_PER_BANK;
+    B_buffer += (lane_id % 32 >= 16) ? NB_BANKS * E_PER_BANK * 2 : 0;
 
     // Declare input registers
     fp8x8 reg_A[OPS];

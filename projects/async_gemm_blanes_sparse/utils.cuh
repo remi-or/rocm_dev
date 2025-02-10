@@ -7,30 +7,25 @@ void inline __device__ consumer_smem_to_reg(fp8* buffer, T &reg);
 template<>
 void inline __device__ consumer_smem_to_reg(fp8* buffer, fp8x8 &reg) 
 {
-    fp8 elem = __hip_cvt_float_to_fp8(1.0f, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
-    // 32 bits load from the current bank
+    static constexpr int E_PER_BANK = 4;
     #pragma unroll
-    for (int i = 0; i < 4; i++) {
-        reg[i] = buffer[i];
-    }
-    // 32 bits load from the same bank, hopefully extension of the first load
+    for (int i = 0; i < E_PER_BANK; i++) { reg[i + 0 * E_PER_BANK] = buffer[i + 0 * NB_BANKS * E_PER_BANK]; }
     #pragma unroll
-    for (int i = 0; i < 4; i++) {
-        reg[4 + i] = buffer[i + 32*E_P_BANK];
-    }
+    for (int i = 0; i < E_PER_BANK; i++) { reg[i + 1 * E_PER_BANK] = buffer[i + 1 * NB_BANKS * E_PER_BANK]; }
 }
 
 template<>
 void inline __device__ consumer_smem_to_reg(fp8* buffer, fp8x16 &reg) 
 {
+    static constexpr int E_PER_BANK = 4;
     #pragma unroll
-    for (int i = 0; i < 4; i++) { reg[i     ] = buffer[i                   ]; }
+    for (int i = 0; i < E_PER_BANK; i++) { reg[i + 0 * E_PER_BANK] = buffer[i + 0 * NB_BANKS * E_PER_BANK]; }
     #pragma unroll
-    for (int i = 0; i < 4; i++) { reg[i +  4] = buffer[i +     32*E_P_BANK]; }
+    for (int i = 0; i < E_PER_BANK; i++) { reg[i + 1 * E_PER_BANK] = buffer[i + 1 * NB_BANKS * E_PER_BANK]; }
     #pragma unroll
-    for (int i = 0; i < 4; i++) { reg[i +  8] = buffer[i + 2 * 32*E_P_BANK]; }
+    for (int i = 0; i < E_PER_BANK; i++) { reg[i + 2 * E_PER_BANK] = buffer[i + 2 * NB_BANKS * E_PER_BANK]; }
     #pragma unroll
-    for (int i = 0; i < 4; i++) { reg[i + 12] = buffer[i + 3 * 32*E_P_BANK]; }
+    for (int i = 0; i < E_PER_BANK; i++) { reg[i + 3 * E_PER_BANK] = buffer[i + 3 * NB_BANKS * E_PER_BANK]; }
 }
 
 template <int LOADS, bool REUSE>

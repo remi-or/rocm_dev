@@ -5,6 +5,7 @@ template<
     int PRODUCERS,
     int LANES,
     int QSIZE,
+    int OP_K,  // This is the size of the operation in the contiguous axis
     int OP_MN, // This is the size of the operation in the strided axis
     bool REUSE
 >
@@ -19,20 +20,21 @@ void __device__ produce_n_full_tiles(
     const int k,
     const int k_blocks
 ) {
-    static constexpr int E_PER_THREADS = 16;
+    // Compile-time constants
+    static constexpr int E_PER_THREAD = 16;
     static constexpr int E_PER_BANK = 4;
+    static constexpr int WARPTILE_K = OP_K * OPS;
 
-    static constexpr int TILES_PER_LOADS = (WARPSIZE * E_PER_THREADS) / (OP_K * OP_MN); // = 32*16/16*64 = 2
+    static constexpr int TILES_PER_LOADS = (WARPSIZE * E_PER_THREAD) / (OP_K * OP_MN); // = 32*16/16*64 = 2
     static constexpr int LOADS = OPS / TILES_PER_LOADS;
-
-    static constexpr int Threads_per_ld = (OP_K * TILES_PER_LOADS) / E_PER_THREADS;
+    static constexpr int THREADS_PER_LD = (OP_K * TILES_PER_LOADS) / E_PER_THREAD;
 
     // Infer ids
     const int lane_id = get_lane_id();
 
     // Infer thread position in source
-    const int curr_ld = (lane_id % Threads_per_ld) * E_PER_THREADS;
-    const int curr_ad = lane_id / Threads_per_ld;
+    const int curr_ld = (lane_id % THREADS_PER_LD) * E_PER_THREAD;
+    const int curr_ad = lane_id / THREADS_PER_LD;
 
     // Relocate thread in source
     source += curr_ad * k;
@@ -44,7 +46,7 @@ void __device__ produce_n_full_tiles(
     buffer += (curr_ld % 32 >= 16) ? 16 * E_PER_BANK : 0;
 
     // Prepare registers
-    fp8 reg[LOADS][E_PER_THREADS];
+    fp8 reg[LOADS][E_PER_THREAD];
 
     // K-wise loop
     const fp8* src;
@@ -80,13 +82,13 @@ void __device__ produce_n_full_tiles(
 
             // Place tile in shared memory
             #pragma unroll
-            for (int line = 0; line < E_PER_THREADS / E_PER_BANK; line++) {
+            for (int line = 0; line < E_PER_THREAD / E_PER_BANK; line++) {
                 #pragma unroll
                 for (int elem = 0; elem < E_PER_BANK; elem++) {
                     buf[line * (NB_BANKS * E_PER_BANK) + elem] = reg[load][E_PER_BANK * line + elem];
                 }
             }
-            buf += WARPSIZE * E_PER_THREADS;
+            buf += WARPSIZE * E_PER_THREAD;
         }
 
         // Mark buffer as filled

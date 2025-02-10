@@ -13,16 +13,24 @@ void __device__ produce_4_half_tiles(
     const int k,
     const int k_blocks
 ) {
-    static constexpr int elems_per_thread = 16;
-    static constexpr int elems_per_bank = 4;
-    static constexpr int threads_per_ld = 8;
+    // Compile-time constants
+    static constexpr int E_PER_THREAD = 16;
+    static constexpr int E_PER_BANK = 4;
+    static constexpr int OP_M = 8;
+    static constexpr int OP_N = 16;
+    static constexpr int OP_K = 64;
+    static constexpr int WARPTILE_M = OP_M;
+    static constexpr int WARPTILE_N = OP_N * B_LANES;
+    static constexpr int WARPTILE_K = OP_K * OPS;
+
+    static constexpr int THREADS_PER_LD = 8;
 
     // Infer ids
     const int lane_id = get_lane_id();
 
     // Infer thread position in source
-    const int curr_ld = (lane_id % threads_per_ld) * elems_per_thread;
-    const int curr_ad = lane_id / threads_per_ld;
+    const int curr_ld = (lane_id % THREADS_PER_LD) * E_PER_THREAD;
+    const int curr_ad = lane_id / THREADS_PER_LD;
 
     // Relocate thread in source (and queue for B producers) // WARNING: currently assume m == 8
     src += (curr_ad + dropped_ad > WARPTILE_M - 1) ? 0 : curr_ad * k;
@@ -30,14 +38,14 @@ void __device__ produce_4_half_tiles(
     src += (OPS == 1 ? 2 : 1) * role_id * WARPTILE_K;
 
     // Relocate thread in buffer
-    buffer += elems_per_bank * curr_ad;
-    buffer += (curr_ld / 64) * 32 * elems_per_bank * 4;
+    buffer += E_PER_BANK * curr_ad;
+    buffer += (curr_ld / 64) * 32 * E_PER_BANK * 4;
     buffer += (curr_ld % 64) * 2;
     
     // Prepare registers
-    fp8_4 reg0[elems_per_thread / 4];
-    fp8_4 reg1[elems_per_thread / 4];
-    fp8_4 swap_reg[elems_per_thread / 4];
+    fp8_4 reg0[E_PER_THREAD / 4];
+    fp8_4 reg1[E_PER_THREAD / 4];
+    fp8_4 swap_reg[E_PER_THREAD / 4];
 
     // K-wise loop
     fp8_4* buf;

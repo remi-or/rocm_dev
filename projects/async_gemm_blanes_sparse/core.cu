@@ -20,29 +20,19 @@
 
 // Absolute constants
 #define WARPSIZE 64
-#define OP_M 16
-#define OP_N 16
-#define OP_K 32
-#define E_P_BANK 4
 #define NB_BANKS 32
 #define CU 304
 
 // User defined constants
 #define OPS 8
-#define SK 1
-
-// Infered constants
-#define WARPTILE_M OP_M
-#define WARPTILE_K (OP_K * OPS)
 
 // Parameters
-#define B_LANES_ 4
-
+#define B_LANES_ 3
 #define A_PRODUCERS_ 2
 #define B_PRODUCERS_ 7
 #define CONSUMERS_ 3
-
 #define QSIZE_ 3
+#define SK 3
 
 // Macros
 #define NUM_WARPTILE_K(k, split_k) (((k / WARPTILE_K) / split_k))

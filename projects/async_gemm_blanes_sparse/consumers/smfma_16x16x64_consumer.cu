@@ -14,10 +14,19 @@ void __device__ consume_tiles_sparse_16x16x64(
     const int k,
     const int k_blocks
 ) {
+    // Compile-time constants
+    static constexpr int E_PER_BANK = 4;
+    static constexpr int OP_M = 8;
+    static constexpr int OP_N = 16;
+    static constexpr int OP_K = 64;
+    static constexpr int WARPTILE_M = OP_M;
+    static constexpr int WARPTILE_N = OP_N * B_LANES;
+    static constexpr int WARPTILE_K = OP_K * OPS;
+
     // Compute thread position
     const int lane_id = get_lane_id();
-    A_buffer += (lane_id / 2) * E_P_BANK + (threadIdx.x % 2) * 32*E_P_BANK * 2;
-    B_buffer += (lane_id % 32) * 4 + (lane_id / 32) * 32*E_P_BANK * 4;
+    A_buffer += (lane_id / 2) * E_PER_BANK + (threadIdx.x % 2) * NB_BANKS * E_PER_BANK * 2;
+    B_buffer += (lane_id % 32) * 4 + (lane_id / 32) * NB_BANKS * E_PER_BANK * 4;
     const int sparsity_indices = (threadIdx.x % 2) ? 0x0000EEEE : 0x00004444;
 
     // Declare input registers

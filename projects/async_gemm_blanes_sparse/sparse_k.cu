@@ -15,13 +15,20 @@ void __global__ _tsr_kernel(
     const int k,
     const int split_k
 ) {
+    // Compile-time constants
+    static constexpr int OP_M = 16;
+    static constexpr int OP_N = 16;
+    static constexpr int OP_K = 32;
+    static constexpr int WARPTILE_M = OP_M;
+    static constexpr int WARPTILE_N = OP_N * B_LANES;
+    static constexpr int WARPTILE_K = OP_K * OPS;
+
     // Initialize shared queue
     __shared__ int queue[2 * B_LANES * QSIZE];
     if (threadIdx.x < 2 * B_LANES * QSIZE) {
         queue[threadIdx.x] = 0;
     }
     // Declare shared buffer
-    static constexpr int WARPTILE_N = B_LANES * OP_N;
     __shared__ fp8 A_buffer[WARPTILE_M * WARPTILE_K * QSIZE];
     __shared__ fp8 B_buffer[WARPTILE_N * WARPTILE_K * QSIZE];
     __syncthreads();
@@ -81,7 +88,7 @@ void __global__ _tsr_kernel(
 
         // A producer warp
         if (warp_id < A_PRODUCERS) {
-            produce_n_full_tiles<A_PRODUCERS, 1, QSIZE, OP_M, true>(
+            produce_n_full_tiles<A_PRODUCERS, 1, QSIZE, OP_K, OP_M, true>(
                 A + curr_k,
                 &A_buffer[0],
                 &queue[0], B_LANES,
@@ -92,7 +99,7 @@ void __global__ _tsr_kernel(
         // B producer warp
         else if (warp_id < A_PRODUCERS + B_PRODUCERS) {
             // TODO: investigate the reuse parameter forB (true = faster but goes wrong because no sc1)
-            produce_n_full_tiles<B_PRODUCERS, B_LANES, QSIZE, OP_N, false>(
+            produce_n_full_tiles<B_PRODUCERS, B_LANES, QSIZE, OP_K, OP_N, false>(
                 B + curr_n * k + curr_k,
                 &B_buffer[0],
                 &queue[1], 1,
@@ -126,9 +133,15 @@ void async_gemm(
     const int n, 
     const int k
 ) {
+    // Compile-time constants
+    static constexpr int OP_M = 16;
+    static constexpr int OP_K = 64;
+    static constexpr int WARPTILE_M = OP_M;
+    static constexpr int WARPTILE_K = OP_K * OPS;
+
     // Check shape
     if (m > WARPTILE_M) {
-        std::cerr << "m = " << k << " is greater than WARPTILE_M = " << WARPTILE_M << std::endl;
+        std::cerr << "m = " << m << " is greater than WARPTILE_M = " << WARPTILE_M << std::endl;
         exit(1);
     }    
     if (k % WARPTILE_K != 0) {
