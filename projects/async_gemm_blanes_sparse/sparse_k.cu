@@ -5,7 +5,7 @@
 // TODO: try uint16 for the p state
 
 template<int B_LANES, int A_PRODUCERS, int B_PRODUCERS, int CONSUMERS, int QSIZE>
-void __global__ _tsr_kernel(
+void __global__ _skinny_gemm_kernel(
     const fp8* __restrict__ A, 
     const fp8* __restrict__ B,
     half* __restrict__ D,
@@ -124,7 +124,7 @@ void __global__ _tsr_kernel(
     }    
 }
 
-void async_gemm(
+void skinny_gemm_notorch(
     const fp8* __restrict__ A, 
     const fp8* __restrict__ B,
     half* __restrict__ D, 
@@ -159,7 +159,7 @@ void async_gemm(
     dim3 block(warps * WARPSIZE, 1, 1);
 
     // Launch kernel
-    _tsr_kernel<B_LANES_, A_PRODUCERS_, B_PRODUCERS_, CONSUMERS_, QSIZE_><<<grid, block, 0, 0>>>(A, B, D, scale_tensor, m, n, k, SK);
+    _skinny_gemm_kernel<B_LANES_, A_PRODUCERS_, B_PRODUCERS_, CONSUMERS_, QSIZE_><<<grid, block, 0, 0>>>(A, B, D, scale_tensor, m, n, k, SK);
 }
 
 

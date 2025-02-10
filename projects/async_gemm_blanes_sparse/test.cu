@@ -4,7 +4,7 @@
 #include <hip/hip_fp16.h>
 
 template <typename out_dtype>
-void host_tiled_sum_reduce(
+void host_skinny_gemm(
     const fp8* __restrict__ A, 
     const fp8* __restrict__ B,
     out_dtype* __restrict__ &D, 
@@ -67,7 +67,7 @@ int main(int argc, char **argv) {
 
     random_host_tensor<float>(hScale_tensor, 1);
     // hScale_tensor[0] = 1;
-    host_tiled_sum_reduce<OUTD>(hA, hB, host_ref, hScale_tensor, m, n, k);
+    host_skinny_gemm<OUTD>(hA, hB, host_ref, hScale_tensor, m, n, k);
 
     // Device tensors
     fp8 *dA, *dB;
@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
     tensor_h2d<float>(hScale_tensor, dScale_tensor, 1);
 
     HIP_CHECK( hipDeviceSynchronize() );
-    async_gemm(dA, dB, dD, dScale_tensor, m, n, k);
+    skinny_gemm_notorch(dA, dB, dD, dScale_tensor, m, n, k);
     HIP_CHECK( hipDeviceSynchronize() );
 
     // Transfer result and free device tensors

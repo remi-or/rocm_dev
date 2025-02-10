@@ -1,6 +1,8 @@
 #pragma once
 #include "./core.cu"
 
+
+//----------------------------------------------------------------------------------------------------------------------
 template<typename T>
 void inline __device__ consumer_smem_to_reg(fp8* buffer, T &reg);
 
@@ -28,6 +30,8 @@ void inline __device__ consumer_smem_to_reg(fp8* buffer, fp8x16 &reg)
     for (int i = 0; i < E_PER_BANK; i++) { reg[i + 3 * E_PER_BANK] = buffer[i + 3 * NB_BANKS * E_PER_BANK]; }
 }
 
+
+//----------------------------------------------------------------------------------------------------------------------
 template <int LOADS, bool REUSE>
 void inline __device__ load_from_gmem_to_reg_no_waitcnt(const fp8* &src, fp8 reg[LOADS][16]) {
     if constexpr (LOADS == 1) {

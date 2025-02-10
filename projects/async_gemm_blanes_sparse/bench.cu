@@ -51,7 +51,7 @@ int main(int argc, char **argv) {
         HIP_CHECK(hipEventRecord(start));
         #pragma unroll
         for (int i = 0; i < BATCH; i++) {
-            async_gemm(
+            skinny_gemm_notorch(
                 dA, 
                 dB + i * n * k, 
                 D, 
