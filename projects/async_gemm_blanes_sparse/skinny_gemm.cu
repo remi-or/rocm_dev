@@ -157,6 +157,12 @@ void skinny_gemm_notorch(
 //     int64_t b_lanes,
 //     int64_t split_k
 // ) {
+//     // Compile-time constants
+//     static constexpr int OP_M = 16;
+//     static constexpr int OP_K = 64;
+//     static constexpr int WARPTILE_M = OP_M;
+//     static constexpr int WARPTILE_K = OP_K * OPS;
+
 //     const int m = A.size(0);
 //     const int n = B.size(1);
 //     const int k = A.size(1);
@@ -186,11 +192,15 @@ void skinny_gemm_notorch(
 //     switch (b_lanes) {
 //         case 3:
 //             block.x = WARPSIZE * (2 + 6 + 3);
-//             _tsr_kernel<3, 2, 6, 3, 3><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, split_k);
+//             _skinny_gemm_kernel<3, 2, 6, 3, 3><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, split_k);
+//             break;
+//         case 4:
+//             block.x = WARPSIZE * (2 + 6 + 3);
+//             _skinny_gemm_kernel<4, 2, 6, 3, 3><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, split_k);
 //             break;
 //         case 5:
 //             block.x = WARPSIZE * (2 + 6 + 2);
-//             _tsr_kernel<5, 2, 6, 2, 2><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, split_k);
+//             _skinny_gemm_kernel<5, 2, 6, 2, 2><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, split_k);
 //             break;
 //         default:
 //             break;
