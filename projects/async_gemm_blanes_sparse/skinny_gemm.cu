@@ -6,13 +6,14 @@
 
 template<int B_LANES, int A_PRODUCERS, int B_PRODUCERS, int CONSUMERS, int QSIZE>
 void __global__ _skinny_gemm_kernel(
-    const fp8* __restrict__ A, 
+    const fp8* __restrict__ A,
     const fp8* __restrict__ B,
     half* __restrict__ D,
     const float* scale_tensor,
     const int m,
     const int n,
     const int k,
+    const int B_stride,
     const int split_k
 ) {
     // Compile-time constants
@@ -49,7 +50,7 @@ void __global__ _skinny_gemm_kernel(
     const int stop_tile = min(total_tiles, tiles_per_block * (blockIdx.x + 1));
     for (
         int tile = tiles_per_block * blockIdx.x;
-        tile < stop_tile; 
+        tile < stop_tile;
         tile++
     ) {
 
@@ -60,7 +61,7 @@ void __global__ _skinny_gemm_kernel(
         // Compute tile's K blocks (number of blocks along the K axis)
         k_blocks = (
             (tile / tiles_per_row) == (split_k - 1)
-            ? (k / WARPTILE_K) - (split_k - 1) * NUM_WARPTILE_K(k, split_k) 
+            ? (k / WARPTILE_K) - (split_k - 1) * NUM_WARPTILE_K(k, split_k)
             : NUM_WARPTILE_K(k, split_k)
         );
 
@@ -77,20 +78,22 @@ void __global__ _skinny_gemm_kernel(
                 &queue[0], B_LANES,
                 index, p_state, role_id,
                 dropped_rows,
-                k, k_blocks
+                k, // A is supposed to always be contiguous
+                k_blocks
             );
         }
         // B producer warp
         else if (warp_id < A_PRODUCERS + B_PRODUCERS) {
             // TODO: investigate the reuse parameter forB (true = faster but goes wrong because no sc1)
             produce_n_full_tiles<B_PRODUCERS, B_LANES, QSIZE, OP_K, OP_N, false>(
-                B + curr_n * k + curr_k,
+                B + curr_n * B_stride + curr_k,
                 &B_buffer[0],
                 &queue[1], 1,
                 index, p_state, role_id,
                 0, // for B, we simply offset the tiles to not load OOB
-                k, k_blocks
-            ); 
+                B_stride,
+                k_blocks
+            );
         }
         // Consumers warp
         else if (warp_id < A_PRODUCERS + B_PRODUCERS + CONSUMERS) {
@@ -105,16 +108,16 @@ void __global__ _skinny_gemm_kernel(
                 n, k, k_blocks
             );
         }
-    }    
+    }
 }
 
 void skinny_gemm_notorch(
-    const fp8* __restrict__ A, 
+    const fp8* __restrict__ A,
     const fp8* __restrict__ B,
-    half* __restrict__ D, 
+    half* __restrict__ D,
     const float* scale_tensor,
-    const int m, 
-    const int n, 
+    const int m,
+    const int n,
     const int k
 ) {
     // Compile-time constants
@@ -127,7 +130,7 @@ void skinny_gemm_notorch(
     if (m > WARPTILE_M) {
         std::cerr << "m = " << m << " is greater than WARPTILE_M = " << WARPTILE_M << std::endl;
         exit(1);
-    }    
+    }
     if (k % WARPTILE_K != 0) {
         std::cerr << "k = " << k << " is not divisible by WARPTILE_K = " << WARPTILE_K << std::endl;
         exit(1);
@@ -143,7 +146,7 @@ void skinny_gemm_notorch(
     dim3 block(warps * WARPSIZE, 1, 1);
 
     // Launch kernel
-    _skinny_gemm_kernel<B_LANES_, A_PRODUCERS_, B_PRODUCERS_, CONSUMERS_, QSIZE_><<<grid, block, 0, 0>>>(A, B, D, scale_tensor, m, n, k, SK);
+    _skinny_gemm_kernel<B_LANES_, A_PRODUCERS_, B_PRODUCERS_, CONSUMERS_, QSIZE_><<<grid, block, 0, 0>>>(A, B, D, scale_tensor, m, n, k, k, SK);
 }
 
 
@@ -166,17 +169,19 @@ void skinny_gemm_notorch(
 //     const int m = A.size(0);
 //     const int n = B.size(1);
 //     const int k = A.size(1);
-    
-//     const fp8* __restrict__ A_ = (const fp8* __restrict__) A.data_ptr(); 
-//     const fp8* __restrict__ B_ = (const fp8* __restrict__) B.data_ptr(); 
-//     half* __restrict__ D_ = (half* __restrict__) D.data_ptr(); 
-//     float* __restrict__ scale_tensor_ = (float* __restrict__) scale_tensor.data_ptr(); 
+
+//     const int B_stride = B.stride(0);
+
+//     const fp8* __restrict__ A_ = (const fp8* __restrict__) A.data_ptr();
+//     const fp8* __restrict__ B_ = (const fp8* __restrict__) B.data_ptr();
+//     half* __restrict__ D_ = (half* __restrict__) D.data_ptr();
+//     float* __restrict__ scale_tensor_ = (float* __restrict__) scale_tensor.data_ptr();
 
 //     // Check shape
 //     if (m > WARPTILE_M) {
 //         std::cerr << "m = " << k << " is greater than WARPTILE_M = " << WARPTILE_M << std::endl;
 //         exit(1);
-//     }    
+//     }
 //     if (k % WARPTILE_K != 0) {
 //         std::cerr << "k = " << k << " is not divisible by WARPTILE_K = " << WARPTILE_K << std::endl;
 //         exit(1);
@@ -192,15 +197,15 @@ void skinny_gemm_notorch(
 //     switch (b_lanes) {
 //         case 3:
 //             block.x = WARPSIZE * (2 + 6 + 3);
-//             _skinny_gemm_kernel<3, 2, 6, 3, 3><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, split_k);
+//             _skinny_gemm_kernel<3, 2, 6, 3, 3><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, B_stride, split_k);
 //             break;
 //         case 4:
 //             block.x = WARPSIZE * (2 + 6 + 3);
-//             _skinny_gemm_kernel<4, 2, 6, 3, 3><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, split_k);
+//             _skinny_gemm_kernel<4, 2, 6, 3, 3><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, B_stride, split_k);
 //             break;
 //         case 5:
 //             block.x = WARPSIZE * (2 + 6 + 2);
-//             _skinny_gemm_kernel<5, 2, 6, 2, 2><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, split_k);
+//             _skinny_gemm_kernel<5, 2, 6, 2, 2><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, B_stride, split_k);
 //             break;
 //         default:
 //             break;

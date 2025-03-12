@@ -18,7 +18,7 @@ void __device__ produce_n_full_tiles(
     int &p_state,
     int &role_id,
     int dropped_mn, // number of rows or columns that are out of bounds for this producer
-    const int k,
+    const int stride_ad,
     const int k_blocks
 ) {
     // Compile-time constants
@@ -39,7 +39,7 @@ void __device__ produce_n_full_tiles(
     dropped_mn += curr_ad;
 
     // Relocate thread in source
-    source += curr_ad * k;
+    source += curr_ad * stride_ad;
     source += curr_ld;
 
     // Relocate thread in buffer
@@ -63,7 +63,7 @@ void __device__ produce_n_full_tiles(
         // Relocate in source, accounting for dropped rows or cols
         int offset_mn = (b % LANES) * OP_MN;
         offset_mn = (offset_mn + dropped_mn >= OP_MN * LANES) ? 0 : offset_mn;
-        src = source + (b / LANES) * WARPTILE_K + offset_mn * k;
+        src = source + (b / LANES) * WARPTILE_K + offset_mn * stride_ad;
 
         // Relocate in buffer without accounting for drops
         buf = buffer + index * (OP_MN * WARPTILE_K);
