@@ -5,12 +5,12 @@
 
 template <typename out_dtype>
 void host_skinny_gemm(
-    const fp8* __restrict__ A, 
+    const fp8* __restrict__ A,
     const fp8* __restrict__ B,
-    out_dtype* __restrict__ &D, 
-    const float* scale_tensor, 
-    const int m, 
-    const int n, 
+    out_dtype* __restrict__ &D,
+    const float* scale_tensor,
+    const int m,
+    const int n,
     const int k
 ) {
     float acc;

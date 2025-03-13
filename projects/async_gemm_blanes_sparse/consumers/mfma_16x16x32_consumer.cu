@@ -41,9 +41,9 @@ void __device__ consume_tiles_dense_16x16x32(
     f32x4 reg_D[B_LANES];
     #pragma unroll
     for (int i = 0; i < B_LANES; i++) {
-        reg_D[i][0] = 0.0f; 
-        reg_D[i][1] = 0.0f; 
-        reg_D[i][2] = 0.0f; 
+        reg_D[i][0] = 0.0f;
+        reg_D[i][1] = 0.0f;
+        reg_D[i][2] = 0.0f;
         reg_D[i][3] = 0.0f;
     }
 
@@ -90,7 +90,7 @@ void __device__ consume_tiles_dense_16x16x32(
                 reg_D[lane] = __builtin_amdgcn_mfma_f32_16x16x32_fp8_fp8(
                     reinterpret_cast<long>(reg_A[op]),
                     reinterpret_cast<long>(reg_B[op]),
-                    reg_D[lane], 
+                    reg_D[lane],
                     0, // src2
                     0, // cbsz
                     0  // abid
@@ -125,7 +125,7 @@ void __device__ consume_tiles_dense_16x16x32(
         reg_D[i][2] *= final_scale;
         reg_D[i][3] *= final_scale;
 
-        // Swapping 
+        // Swapping
         reg_D[i][id_to_swap    ] = __shfl(reg_D[i][id_to_swap    ], src_lane);
         reg_D[i][id_to_swap + 2] = __shfl(reg_D[i][id_to_swap + 2], src_lane);
     }

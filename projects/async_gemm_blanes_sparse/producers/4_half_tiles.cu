@@ -1,4 +1,4 @@
-#include "./../core.cu" 
+#include "./../core.cu"
 
 // WARNING / TODO : tiles always hit cache AND are swizzled
 template<int PRODUCERS, int B_LANES, int QSIZE>
@@ -41,7 +41,7 @@ void __device__ produce_4_half_tiles(
     buffer += E_PER_BANK * curr_ad;
     buffer += (curr_ld / 64) * 32 * E_PER_BANK * 4;
     buffer += (curr_ld % 64) * 2;
-    
+
     // Prepare registers
     fp8_4 reg0[E_PER_THREAD / 4];
     fp8_4 reg1[E_PER_THREAD / 4];

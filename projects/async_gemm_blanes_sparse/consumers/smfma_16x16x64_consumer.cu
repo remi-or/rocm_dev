@@ -85,7 +85,7 @@ void __device__ consume_tiles_sparse_16x16x64(
                 reg_D[lane] = __builtin_amdgcn_smfmac_f32_16x16x64_fp8_fp8(
                     reinterpret_cast<fp8_4x2>(reg_A[op]),
                     reinterpret_cast<fp8_4x4>(reg_B[op]),
-                    reg_D[lane], 
+                    reg_D[lane],
                     sparsity_indices, // src2
                     7, 1 // cbsz, abid
                 );
@@ -121,7 +121,7 @@ void __device__ consume_tiles_sparse_16x16x64(
         reg_D[i][0] *= final_scale;
         reg_D[i][1] *= final_scale;
 
-        // Swapping 
+        // Swapping
         reg_D[i][id_to_swap] = __shfl(reg_D[i][id_to_swap], src_lane);
     }
 
