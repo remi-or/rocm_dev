@@ -9,7 +9,7 @@ import random
 
 from project_class import Project
 
-    
+
 def skip(params: Dict[str, int]) -> bool:
     lane_size = 16
     op_k = 32
@@ -34,15 +34,17 @@ def replace_line_in_buffer(buffer: List[str], prefix: str, replacement_line: str
 
 class Grid:
 
-    def __init__(self, 
+    def __init__(self,
         substitutions: Dict[str, List[int]],
         project: Project,
         arguments: str,
         shuffle: bool = False,
         skip_to: int = 0,
+        timeout: Optional[float] = None,
     ) -> None:
         self.project = project
         self.arguments = arguments
+        self.timeout = timeout
         self.params_enumerator = self.prepare_params_enumerator(substitutions, shuffle, skip_to)
         self.core = self.save_original_core()
         self.hash = (sum([sum(v) * len(k) for k, v in substitutions.items()]) % 10000) * 10000 + random.randint(0, 9999)
@@ -54,7 +56,7 @@ class Grid:
         list_of_values = list(itertools.product(*substitutions.values()))
         if shuffle:
             random.seed(0)
-            random.shuffle(list_of_values) 
+            random.shuffle(list_of_values)
 
         params_enumerator = []
         for i, values in enumerate(list_of_values):
@@ -65,7 +67,7 @@ class Grid:
             if i < skip_to:
                 continue
             params_enumerator.append((i, params))
-        
+
         return params_enumerator
 
     def save_original_core(self) -> List[str]:
@@ -94,7 +96,7 @@ class Grid:
         # Write back original core
         with open(self.core[0], "w") as file:
             for line in self.core[1:]:
-                file.write(line)    
+                file.write(line)
 
     def bench_params(self, params: Dict[str, int]) -> Dict[str, float]:
         # Create new core
@@ -106,17 +108,17 @@ class Grid:
             for line in new_core:
                 file.write(line)
         # Bench with new core
-        return self.bench_current_state(timeout=25)
+        return self.bench_current_state()
 
     def log(self, msg: str) -> None:
         with open(f"tmp_{self.hash}.txt", "a") as file:
             file.write(msg)
         print(msg, end="")
-        
-    def bench_current_state(self, timeout: Optional[float] = None) -> Dict[str, float]:
+
+    def bench_current_state(self) -> Dict[str, float]:
         # Compile and run benchmark
         try:
-            time_string = self.project.compile_and_run("bench.cu", self.arguments, timeout)
+            time_string = self.project.compile_and_run("bench.cu", self.arguments, self.timeout)
             times = time_string[2:-3].split(", ")[3:]
         except subprocess.TimeoutExpired as t:
             print("ERROR: End of timeout.")
@@ -142,13 +144,13 @@ class Grid:
 if __name__ == "__main__":
 
     substitutions = {
-        "B_LANES_": [2, 3, 4, 5],
+        "B_LANES_": [3],
         "OPS": [8],
-        "A_PRODUCERS_": [2, 3, 4],
-        "B_PRODUCERS_": [4, 5, 6, 7, 8, 9, 10, 11, 12],
-        "CONSUMERS_": [2, 3, 4],
-        "QSIZE_": [3, 4, 5],
-        "SK": [1, 2, 3, 4, 5],
+        "A_PRODUCERS_": [3],
+        "B_PRODUCERS_": [6, 7, 8],
+        "CONSUMERS_": [3],
+        "QSIZE_": [3],
+        "SK": [3],
     }
 
     # Parse arguments
@@ -157,7 +159,7 @@ if __name__ == "__main__":
     parser.add_argument("--arguments", "-a", default="")
     parser.add_argument("--shuffle", "-s", action="store_true")
     parser.add_argument("--restart", "-r", default=0, type=int)
-    
+
     args = parser.parse_args()
 
     grid = Grid(
@@ -166,6 +168,7 @@ if __name__ == "__main__":
         arguments=str(args.arguments),
         shuffle=bool(args.shuffle),
         skip_to=int(args.restart),
+        timeout=30,
     )
 
     grid.explore()
