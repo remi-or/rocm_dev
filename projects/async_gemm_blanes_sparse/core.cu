@@ -30,10 +30,10 @@
 // Parameters
 #define B_LANES_ 3
 #define A_PRODUCERS_ 2
-#define B_PRODUCERS_ 7
+#define B_PRODUCERS_ 6
 #define CONSUMERS_ 3
 #define QSIZE_ 3
-#define SK 3
+#define SK 1
 
 // Macros
 #define NUM_WARPTILE_K(k, split_k) (((k / WARPTILE_K) / split_k))

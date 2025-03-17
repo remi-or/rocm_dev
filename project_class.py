@@ -50,6 +50,7 @@ class Project:
         self.backup_nb = len([file for file in os.listdir(self.backup_dir) if file[-4:] == ".zip"])
 
     def compile_and_run(self, c_file: str, arguments: str = "", timeout: Optional[float] = None) -> str:
+        # Compile
         file_path = osp.join(self.project_dir, c_file)
         name = c_file.split(".")[0]
         subprocess.check_call(f"hipcc -O3 {file_path} -save-temps -o {name}.out".split())
@@ -58,12 +59,15 @@ class Project:
         os.mkdir("./build")
         for file in new_files:
             shutil.move(file, f"./build/{file}")
+        # Run
+        return self.run(c_file, arguments, timeout)
+
+    def run(self, c_file: str, arguments: str = "", timeout: Optional[float] = None) -> str:
+        name = c_file.split(".")[0]
         return str(subprocess.check_output(
             args=f"./build/{name}.out {arguments}".split(),
             timeout=timeout
         ))[2:-1]
-
-    
     def backup(self) -> str:
         """Backups the current project and returns the hash of the backup."""
         # Create a temporary backup

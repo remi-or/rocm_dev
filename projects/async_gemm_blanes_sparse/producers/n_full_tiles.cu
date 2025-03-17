@@ -1,4 +1,4 @@
-#include "./../utils.cuh" 
+#include "./../utils.cuh"
 
 // WARNING / TODO : this producer always skips cache
 template<
@@ -6,7 +6,7 @@ template<
     int LANES,
     int QSIZE,
     int OP_K,  // This is the size of the operation in the contiguous axis
-    int OP_MN, // This is the size of the operation in the strided axis
+    int OP_AD, // This is the size of the operation in the strided axis
     bool REUSE
 >
 void __device__ produce_n_full_tiles(
@@ -17,7 +17,7 @@ void __device__ produce_n_full_tiles(
     int &index,
     int &p_state,
     int &role_id,
-    int dropped_mn, // number of rows or columns that are out of bounds for this producer
+    int dropped_ad, // number of rows or columns that are out of bounds for this producer
     const int stride_ad,
     const int k_blocks
 ) {
@@ -26,7 +26,7 @@ void __device__ produce_n_full_tiles(
     static constexpr int E_PER_BANK = 4;
     static constexpr int WARPTILE_K = OP_K * OPS;
 
-    static constexpr int TILES_PER_LOADS = (WARPSIZE * E_PER_THREAD) / (OP_K * OP_MN);
+    static constexpr int TILES_PER_LOADS = (WARPSIZE * E_PER_THREAD) / (OP_K * OP_AD);
     static constexpr int LOADS = OPS / TILES_PER_LOADS;
     static constexpr int THREADS_PER_LD = (OP_K * TILES_PER_LOADS) / E_PER_THREAD;
 
@@ -36,7 +36,7 @@ void __device__ produce_n_full_tiles(
     // Infer thread position in source
     const int curr_ld = (lane_id % THREADS_PER_LD) * E_PER_THREAD;
     const int curr_ad = lane_id / THREADS_PER_LD;
-    dropped_mn += curr_ad;
+    dropped_ad += curr_ad;
 
     // Relocate thread in source
     source += curr_ad * stride_ad;
@@ -61,12 +61,12 @@ void __device__ produce_n_full_tiles(
         index -= (index >= QSIZE * LANES) ? QSIZE * LANES : 0;
 
         // Relocate in source, accounting for dropped rows or cols
-        int offset_mn = (b % LANES) * OP_MN;
-        offset_mn = (offset_mn + dropped_mn >= OP_MN * LANES) ? 0 : offset_mn;
-        src = source + (b / LANES) * WARPTILE_K + offset_mn * stride_ad;
+        int offset_ad = (b % LANES) * OP_AD;
+        offset_ad = (offset_ad + dropped_ad >= OP_AD * LANES) ? 0 : offset_ad;
+        src = source + (b / LANES) * WARPTILE_K + offset_ad * stride_ad;
 
         // Relocate in buffer without accounting for drops
-        buf = buffer + index * (OP_MN * WARPTILE_K);
+        buf = buffer + index * (OP_AD * WARPTILE_K);
 
         // Start loading all data
         load_from_gmem_to_reg_no_waitcnt<LOADS, REUSE>(src, reg);
