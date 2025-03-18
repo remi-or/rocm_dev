@@ -1,6 +1,10 @@
 #include "./consumers/consumers.cuh"
 #include "./producers/4_half_tiles.cu"
 #include "./producers/n_full_tiles.cu"
+#include <hip/hip_fp16.h>
+
+#include <torch/extension.h>
+#define ENABLE_FP8
 
 // TODO: try uint16 for the p state
 
@@ -152,62 +156,96 @@ void skinny_gemm_notorch(
 
 
 
-// void skinny_gemm(
-//     torch::Tensor& A,
-//     torch::Tensor& B,
-//     torch::Tensor& D,
-//     torch::Tensor& scale_tensor,
-//     int64_t b_lanes,
-//     int64_t split_k
-// ) {
-//     // Compile-time constants
-//     static constexpr int OP_M = 16;
-//     static constexpr int OP_K = 64;
-//     static constexpr int WARPTILE_M = OP_M;
-//     static constexpr int WARPTILE_K = OP_K * OPS;
+void skinny_gemm(
+    torch::Tensor& A,
+    torch::Tensor& B,
+    torch::Tensor& D,
+    torch::Tensor& scale_tensor,
+    int64_t b_lanes,
+    int64_t split_k
+) {
+    // Compile-time constants
+    static constexpr int OP_M = 16;
+    static constexpr int OP_K = 64;
+    static constexpr int WARPTILE_M = OP_M;
+    static constexpr int WARPTILE_K = OP_K * OPS;
 
-//     const int m = A.size(0);
-//     const int n = B.size(1);
-//     const int k = A.size(1);
+    const int m = A.size(0);
+    const int n = B.size(1);
+    const int k = A.size(1);
 
-//     const int B_stride = B.stride(0);
+    const int B_stride = B.stride(1);
 
-//     const fp8* __restrict__ A_ = (const fp8* __restrict__) A.data_ptr();
-//     const fp8* __restrict__ B_ = (const fp8* __restrict__) B.data_ptr();
-//     half* __restrict__ D_ = (half* __restrict__) D.data_ptr();
-//     float* __restrict__ scale_tensor_ = (float* __restrict__) scale_tensor.data_ptr();
+    const fp8* __restrict__ A_ = (const fp8* __restrict__) A.data_ptr();
+    const fp8* __restrict__ B_ = (const fp8* __restrict__) B.data_ptr();
+    half* __restrict__ D_ = (half* __restrict__) D.data_ptr();
+    float* __restrict__ scale_tensor_ = (float* __restrict__) scale_tensor.data_ptr();
 
-//     // Check shape
-//     if (m > WARPTILE_M) {
-//         std::cerr << "m = " << k << " is greater than WARPTILE_M = " << WARPTILE_M << std::endl;
-//         exit(1);
-//     }
-//     if (k % WARPTILE_K != 0) {
-//         std::cerr << "k = " << k << " is not divisible by WARPTILE_K = " << WARPTILE_K << std::endl;
-//         exit(1);
-//     }
+    // Check shape
+    if (m > WARPTILE_M) {
+        std::cerr << "m = " << k << " is greater than WARPTILE_M = " << WARPTILE_M << std::endl;
+        exit(1);
+    }
+    if (k % WARPTILE_K != 0) {
+        std::cerr << "k = " << k << " is not divisible by WARPTILE_K = " << WARPTILE_K << std::endl;
+        exit(1);
+    }
 
-//     // Prepare kernel launch
-//     dim3 grid(CU, 1, 1);
-//     dim3 block(1, 1, 1);
-//     const at::cuda::OptionalCUDAGuard device_guard(device_of(A));
-//     const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+    // Prepare kernel launch
+    dim3 grid(CU, 1, 1);
+    dim3 block(1, 1, 1);
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(A));
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
-//     // Launch kernel (branched on B_LANES)
-//     switch (b_lanes) {
-//         case 3:
-//             block.x = WARPSIZE * (2 + 6 + 3);
-//             _skinny_gemm_kernel<3, 2, 6, 3, 3><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, B_stride, split_k);
-//             break;
-//         case 4:
-//             block.x = WARPSIZE * (2 + 6 + 3);
-//             _skinny_gemm_kernel<4, 2, 6, 3, 3><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, B_stride, split_k);
-//             break;
-//         case 5:
-//             block.x = WARPSIZE * (2 + 6 + 2);
-//             _skinny_gemm_kernel<5, 2, 6, 2, 2><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, B_stride, split_k);
-//             break;
-//         default:
-//             break;
-//     }
-// }
+    // Launch kernel (branched on B_LANES)
+    switch (b_lanes) {
+        case 3:
+            block.x = WARPSIZE * (2 + 6 + 3);
+            _skinny_gemm_kernel<3, 2, 6, 3, 3><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, B_stride, split_k);
+            break;
+        case 4:
+            block.x = WARPSIZE * (2 + 6 + 3);
+            _skinny_gemm_kernel<4, 2, 6, 3, 3><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, B_stride, split_k);
+            break;
+        case 5:
+            block.x = WARPSIZE * (2 + 6 + 2);
+            _skinny_gemm_kernel<5, 2, 6, 2, 2><<<grid, block, 0, stream>>>(A_, B_, D_, scale_tensor_, m, n, k, B_stride, split_k);
+            break;
+        default:
+            break;
+    }
+}
+
+
+class FusedGEMMAR {
+private:
+    int world_size;
+
+public:
+    FusedGEMMAR(int world_size_)
+        : world_size(world_size_) {
+    }
+
+    ~FusedGEMMAR() {
+    }
+
+    void gemm_ar(
+        torch::Tensor& A,
+        torch::Tensor& B,
+        torch::Tensor& D,
+        torch::Tensor& scale_tensor,
+        int64_t b_lanes,
+        int64_t split_k
+    ) {
+        skinny_gemm(A, B, D, scale_tensor, b_lanes, split_k);
+    }
+};
+
+
+#define PYBIND11_MODULE_EXPAND(NAME, MODULE) PYBIND11_MODULE(NAME, MODULE)
+
+PYBIND11_MODULE_EXPAND(TORCH_EXTENSION_NAME, m) {
+    py::class_<FusedGEMMAR>(m, "FusedGEMMAR")
+        .def(py::init<int>())
+        .def("gemm_ar", &FusedGEMMAR::gemm_ar);
+}

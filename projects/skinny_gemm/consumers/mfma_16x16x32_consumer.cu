@@ -142,8 +142,8 @@ void __device__ consume_tiles_dense_16x16x32(
     __half2 x;
     #pragma unroll
     for (int lane = 0; lane < B_LANES; lane++) {
-        x.x = reg_D[lane][0];
-        x.y = reg_D[lane][1];
+        x.x = __float2half(reg_D[lane][0]);
+        x.y = __float2half(reg_D[lane][1]);
         asm volatile("global_atomic_pk_add_f16 %0, %1, off\n\t" : : "v"(&D_[lane * (OP_N / 2)]), "v"(x));
     }
 
@@ -155,8 +155,8 @@ void __device__ consume_tiles_dense_16x16x32(
     // Out lane by lane for the second exit row
     #pragma unroll
     for (int lane = 0; lane < B_LANES; lane++) {
-        x.x = reg_D[lane][2];
-        x.y = reg_D[lane][3];
+        x.x = __float2half(reg_D[lane][2]);
+        x.y = __float2half(reg_D[lane][3]);
         asm volatile("global_atomic_pk_add_f16 %0, %1, off\n\t" : : "v"(&D_[lane * (OP_N / 2)]), "v"(x));
     }
 }
