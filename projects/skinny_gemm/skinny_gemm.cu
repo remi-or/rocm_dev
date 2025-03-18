@@ -166,7 +166,7 @@ void skinny_gemm(
 ) {
     // Compile-time constants
     static constexpr int OP_M = 16;
-    static constexpr int OP_K = 64;
+    static constexpr int OP_K = 32;
     static constexpr int WARPTILE_M = OP_M;
     static constexpr int WARPTILE_K = OP_K * OPS;
 
@@ -217,19 +217,19 @@ void skinny_gemm(
 }
 
 
-class FusedGEMMAR {
+class HFRK_skinny_gemm {
 private:
     int world_size;
 
 public:
-    FusedGEMMAR(int world_size_)
+    HFRK_skinny_gemm(int world_size_)
         : world_size(world_size_) {
     }
 
-    ~FusedGEMMAR() {
+    ~HFRK_skinny_gemm() {
     }
 
-    void gemm_ar(
+    void skinny_gemm16(
         torch::Tensor& A,
         torch::Tensor& B,
         torch::Tensor& D,
@@ -245,7 +245,7 @@ public:
 #define PYBIND11_MODULE_EXPAND(NAME, MODULE) PYBIND11_MODULE(NAME, MODULE)
 
 PYBIND11_MODULE_EXPAND(TORCH_EXTENSION_NAME, m) {
-    py::class_<FusedGEMMAR>(m, "FusedGEMMAR")
+    py::class_<HFRK_skinny_gemm>(m, "HFRK_skinny_gemm")
         .def(py::init<int>())
-        .def("gemm_ar", &FusedGEMMAR::gemm_ar);
+        .def("skinny_gemm16", &HFRK_skinny_gemm::skinny_gemm16);
 }
