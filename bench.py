@@ -25,16 +25,21 @@ if __name__ == "__main__":
     # Compile and run test
     max_deltas = []
     sum_deltas = []
-    for i in range(test_runs):
+    for i in range(max(1, test_runs)):
         # Run the test (after compiling if this is the first time)
         if i == 0:
             test_output = project.compile_and_run("test.cu", arguments)
         else:
             test_output = project.run("test.cu", arguments)
-        # Parse the output
-        parsed = json.loads(test_output)
-        max_deltas.append(float(parsed["max_delta"]))
-        sum_deltas.append(float(parsed["total_delta"]))
+        # Parse the output if t is not 0
+        if test_runs != 0:
+            parsed = json.loads(test_output)
+            max_deltas.append(float(parsed["max_delta"]))
+            sum_deltas.append(float(parsed["total_delta"]))
+        else:
+            max_deltas.append(0)
+            sum_deltas.append(0)
+            message = test_output
 
     # Compile and run benchmark
     if skip_bench:
