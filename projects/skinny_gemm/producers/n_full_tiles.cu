@@ -29,13 +29,20 @@ void __device__ produce_n_full_tiles(
     static constexpr int TILES_PER_LOADS = (WARPSIZE * E_PER_THREAD) / (OP_K * OP_AD);
     static constexpr int LOADS = OPS / TILES_PER_LOADS;
     static constexpr int THREADS_PER_LD = (OP_K * TILES_PER_LOADS) / E_PER_THREAD;
+    static constexpr int THREADS_PER_AD = WARPSIZE / THREADS_PER_LD;
 
     // Infer ids
     const int lane_id = get_lane_id();
 
     // Infer thread position in source
-    const int curr_ld = (lane_id % THREADS_PER_LD) * E_PER_THREAD;
-    const int curr_ad = lane_id / THREADS_PER_LD;
+    int curr_ld, curr_ad;
+    if constexpr (OP_K == 16) {
+        curr_ld = (lane_id / THREADS_PER_AD) * E_PER_THREAD;
+        curr_ad = lane_id % THREADS_PER_AD;
+    } else {
+        curr_ld = (lane_id % THREADS_PER_LD) * E_PER_THREAD;
+        curr_ad = lane_id / THREADS_PER_LD;
+    }
     dropped_ad += curr_ad;
 
     // Relocate thread in source
@@ -43,9 +50,13 @@ void __device__ produce_n_full_tiles(
     source += curr_ld;
 
     // Relocate thread in buffer
-    buffer += E_PER_BANK * curr_ad;
-    buffer += (curr_ld / 32) * 32 * E_PER_BANK * 4;
-    buffer += (curr_ld % 32 >= 16) ? 16 * E_PER_BANK : 0;
+    buffer += curr_ad * E_PER_BANK;
+    if constexpr (OP_K == 16) {
+        buffer += (curr_ld / OP_K) * NB_BANKS * E_PER_BANK * 4;
+    } else {
+        buffer += (curr_ld / 32) * NB_BANKS * E_PER_BANK * 4;
+        buffer += (curr_ld % 32 >= 16) ? 16 * E_PER_BANK : 0;
+    }
 
     // Prepare registers
     fp8 reg[LOADS][E_PER_THREAD];
