@@ -151,8 +151,6 @@ void __device__ consume_tiles_dense_32x32x16(
 
         // Relocate on D
         __half2* D_ = reinterpret_cast<__half2*>(D + out_m * n + out_n);
-        // int offset = out_m * n + out_n;
-        // printf("%d | i: %d, out_m: %d, out_n: %d, offset: %d\n", thread_id, i, out_m, out_n, offset);
 
         // Out lane by lane
         __half2 x;
@@ -164,4 +162,33 @@ void __device__ consume_tiles_dense_32x32x16(
             D_ += (OP_N / 2);
         }
     }
+
+    // Debug: input register look-up
+    // if (thread_id == 0) {
+    //     for (int op = 0; op < OPS; op++) {
+    //         printf("Op %d: ", op);
+    //         for (int i = 0; i < 16; i++) {
+    //             printf("%f, ", (float)__hip_cvt_fp8_to_halfraw(reg_A[op][i], __HIP_E4M3_FNUZ).data);
+    //         }
+    //         printf("\n");
+    //     }
+    // }
+
+    // Debug: bank look-up
+    // if (thread_id == 0) {
+    //     for (int bank = 0; bank < NB_BANKS; bank++) {
+    //         for (int line = 0; line < 16; line++) {
+    //             printf("B %d / L %d: ", bank, line);
+    //             for (int elem = 0; elem < E_PER_BANK; elem++) {
+    //                 int index = bank * (E_PER_BANK * NB_BANKS) + line * E_PER_BANK + elem;
+    //                 float x = __hip_cvt_fp8_to_halfraw(buffer_0[index], __HIP_E4M3_FNUZ).data;
+    //                 printf("%f, ", x);
+    //             }
+    //             printf("\n");
+    //         }
+    //     }
+    //     printf("\n");
+    // }
+
+
 }

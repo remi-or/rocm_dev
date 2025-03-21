@@ -29,6 +29,10 @@ void skinny_gemm_notorch(
         std::cerr << "m = " << m << " is greater than WARPTILE_M = " << WARPTILE_M << std::endl;
         exit(1);
     }
+    if (n % 2 != 0) {
+        std::cerr << "n = " << n << " is not even" << std::endl;
+        exit(1);
+    }
     if (k % WARPTILE_K != 0) {
         std::cerr << "k = " << k << " is not divisible by WARPTILE_K = " << WARPTILE_K << std::endl;
         exit(1);

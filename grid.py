@@ -11,10 +11,15 @@ from project_class import Project
 
 
 def skip(params: Dict[str, int]) -> bool:
-    lane_size = 16
-    op_k = 32
+    op_m = 32
+    # Infer other constants from op_m
+    op_n = 32 if op_m == 32 else 16
+    op_k = (16 * 32) / op_m
     # Compute the amount of shared memory (smem) needed
-    smem = params["QSIZE_"] * ((lane_size * params["B_LANES_"] + lane_size) * op_k * params["OPS"] + params["B_LANES_"] / 2)
+    a_buffer = op_m * (op_k * params["OPS"]) * params["QSIZE_"]
+    b_buffer = op_n * (op_k * params["OPS"]) * params["QSIZE_"] * params["B_LANES_"]
+    queue = params["QSIZE_"] * params["B_LANES_"] * 2 * 4
+    smem = a_buffer + b_buffer + queue
     max_smem = 65536
     # Return True if we need to skip the benchmark of these parameters
     return any([
@@ -144,13 +149,13 @@ class Grid:
 if __name__ == "__main__":
 
     substitutions = {
-        "B_LANES_": [3],
-        "OPS": [8],
-        "A_PRODUCERS_": [3],
-        "B_PRODUCERS_": [6, 7, 8],
-        "CONSUMERS_": [3],
-        "QSIZE_": [3],
-        "SK": [3],
+        "B_LANES_": [1, 2, 3, 4],
+        "OPS": [2, 4, 6, 8],
+        "A_PRODUCERS_": [2, 3, 4],
+        "B_PRODUCERS_": [2, 4, 5, 6, 7, 8],
+        "CONSUMERS_": [2, 3, 4, 5],
+        "QSIZE_": [1, 2, 3, 4],
+        "SK": [1, 2, 3, 4, 5, 6],
     }
 
     # Parse arguments
@@ -168,7 +173,7 @@ if __name__ == "__main__":
         arguments=str(args.arguments),
         shuffle=bool(args.shuffle),
         skip_to=int(args.restart),
-        timeout=30,
+        timeout=150,
     )
 
     grid.explore()

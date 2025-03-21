@@ -58,11 +58,11 @@ int main(int argc, char **argv) {
     random_host_tensor<fp8>(hA, m * k); //full_host_tensor<fp8>(hA, m * k, 0); //
     random_host_tensor<fp8>(hB, n * k); //full_host_tensor<fp8>(hB, n * k, 0); //
 
-    // for (int i = 0; i < 32; i++) {
-    //     hA[0 * k + i] = __hip_cvt_float_to_fp8(i / 16, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
+    // for (int i = 0; i < 1; i++) {
+    //     hA[1 * k + i] = __hip_cvt_float_to_fp8(1, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
     // }
-    // for (int i = 0; i < 32; i++) {
-    //     hB[0 * k + i] = __hip_cvt_float_to_fp8(1, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
+    // for (int i = 0; i < k; i++) {
+    //     hB[1 * k + i] = __hip_cvt_float_to_fp8(0, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
     // }
 
     random_host_tensor<float>(hScale_tensor, 1);
@@ -99,7 +99,9 @@ int main(int argc, char **argv) {
         sum_delta += delta;
         max_delta = (delta > max_delta) ? delta : max_delta;
         // std::cout << (float) host_ref[k] << ":" << (float) host_result[k] << ", ";
+        // std::cout << k / n << "," << k % n << ":" << (float) host_result[k] << ", ";
         // std::cout << k << ":" << (float) host_result[k] << ", ";
+        // std::cout << k / n << "," << k % n << ":" << delta << ", ";
         // std::cout << k << ":" << delta << ", ";
     }
     std::cout << "{\"max_delta\": " << max_delta << ", \"total_delta\": " << sum_delta << "}";

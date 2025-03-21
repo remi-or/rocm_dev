@@ -80,7 +80,7 @@ void __device__ produce_n_full_tiles(
         buf = buffer + index * (OP_AD * WARPTILE_K);
 
         // Start loading all data
-        load_from_gmem_to_reg_no_waitcnt<LOADS, REUSE>(src, reg);
+        load_from_gmem_to_reg_no_waitcnt<LOADS, REUSE, OP_K>(src, reg);
 
         // Wait for buffer to be consumed
         while (queue[2 * q_stride * index] != p_state) {
