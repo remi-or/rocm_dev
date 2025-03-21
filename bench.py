@@ -23,8 +23,8 @@ if __name__ == "__main__":
     skip_bench = bool(args.skip_bench)
 
     # Compile and run test
-    max_deltas = []
-    sum_deltas = []
+    max_deltas = [] if test_runs > 0 else [-1]
+    sum_deltas = [] if test_runs > 0 else [-1]
     for i in range(test_runs):
         # Run the test (after compiling if this is the first time)
         if i == 0:
@@ -60,7 +60,6 @@ if __name__ == "__main__":
         "std": float(np.std(bench_ts)),
         "median": float(np.median(bench_ts)),
         "message": message,
-        "time_string": "", # str(time_string),
         "max_deltas": f"{max(max_deltas):.4f} <- [" + ", ".join(map(lambda x: f"{x:.4f}", max_deltas)) + "]",
         "sum_deltas": f"{max(sum_deltas):.4f} <- [" + ", ".join(map(lambda x: f"{x:.4f}", sum_deltas)) + "]",
     }

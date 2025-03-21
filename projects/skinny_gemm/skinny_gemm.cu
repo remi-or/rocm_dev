@@ -44,16 +44,17 @@ void skinny_gemm_notorch(
 
     // Dispatch to the correct kernel
     switch (OP_M) {
-        case 8:
-            _skinny_gemm_kernel<B_LANES_, A_PRODUCERS_, B_PRODUCERS_, CONSUMERS_, QSIZE_, 8>
-                <<<grid, block, 0, 0>>>
-                (A, B, D, scale_tensor, m, n, k, k, SK);
-            break;
-        case 16:
-            _skinny_gemm_kernel<B_LANES_, A_PRODUCERS_, B_PRODUCERS_, CONSUMERS_, QSIZE_, 16>
-                <<<grid, block, 0, 0>>>
-                (A, B, D, scale_tensor, m, n, k, k, SK);
-            break;
+        // DEBUG: to avoid SMEM comparaison error
+        // case 8:
+        //     _skinny_gemm_kernel<B_LANES_, A_PRODUCERS_, B_PRODUCERS_, CONSUMERS_, QSIZE_, 8>
+        //         <<<grid, block, 0, 0>>>
+        //         (A, B, D, scale_tensor, m, n, k, k, SK);
+        //     break;
+        // case 16:
+        //     _skinny_gemm_kernel<B_LANES_, A_PRODUCERS_, B_PRODUCERS_, CONSUMERS_, QSIZE_, 16>
+        //         <<<grid, block, 0, 0>>>
+        //         (A, B, D, scale_tensor, m, n, k, k, SK);
+        //     break;
         case 32:
             _skinny_gemm_kernel<B_LANES_, A_PRODUCERS_, B_PRODUCERS_, CONSUMERS_, QSIZE_, 32>
                 <<<grid, block, 0, 0>>>
