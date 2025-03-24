@@ -1,12 +1,12 @@
 #include "./../common.cuh"
-#include "./sparse_k.cu"
+#include "./skinny_gemm.cu"
 
-#define MUL 10
-#define BATCH 5
+#define MUL 4
+#define BATCH 4
 #define OUTD half
 
 int main(int argc, char **argv) {
-    HIP_CHECK( hipSetDevice(0) );
+    HIP_CHECK( hipSetDevice(7) );
 
     // Parameters
     const int warmups = (MUL * 100) / BATCH;
@@ -25,7 +25,7 @@ int main(int argc, char **argv) {
     random_host_tensor<fp8>(hA, m * k);
     random_host_tensor<fp8>(hB, BATCH * n * k);
 
-    // Events 
+    // Events
     hipEvent_t start, stop;
     HIP_CHECK(hipEventCreate(&start));
     HIP_CHECK(hipEventCreate(&stop));
@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
     // Timer
     float t;
     float total_time = 0.0f;
-    
+
     // Benchmarking loop
     for (int iter = 0; iter < (iterations + warmups); iter++) {
 
@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
         tensor_h2d<fp8>(hB, dB, BATCH * n * k);
         empty_device_tensor<OUTD>(D, m * n);
         random_device_tensor<float>(dScale_tensor, 1);
-        // Flush cache 
+        // Flush cache
         flush_device_cache();
         // Sync
         HIP_CHECK( hipDeviceSynchronize() );
@@ -51,17 +51,17 @@ int main(int argc, char **argv) {
         HIP_CHECK(hipEventRecord(start));
         #pragma unroll
         for (int i = 0; i < BATCH; i++) {
-            async_gemm(
-                dA, 
-                dB + i * n * k, 
-                D, 
-                dScale_tensor, 
+            skinny_gemm_notorch(
+                dA,
+                dB + i * n * k,
+                D,
+                dScale_tensor,
                 m, n, k);
         }
         HIP_CHECK(hipEventRecord(stop));
         HIP_CHECK(hipEventSynchronize(stop));
         HIP_CHECK(hipEventElapsedTime(&t, start, stop));
-        
+
         if (iter == warmups) {
             std::cout << "End of warmup, ";
         }

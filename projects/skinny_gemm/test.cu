@@ -1,16 +1,16 @@
 #include "./../common.cuh"
-#include "./sparse_k.cu"
+#include "./skinny_gemm.cu"
 
 #include <hip/hip_fp16.h>
 
 template <typename out_dtype>
-void host_tiled_sum_reduce(
-    const fp8* __restrict__ A, 
+void host_skinny_gemm(
+    const fp8* __restrict__ A,
     const fp8* __restrict__ B,
-    out_dtype* __restrict__ &D, 
-    const float* scale_tensor, 
-    const int m, 
-    const int n, 
+    out_dtype* __restrict__ &D,
+    const float* scale_tensor,
+    const int m,
+    const int n,
     const int k
 ) {
     float acc;
@@ -41,7 +41,8 @@ void host_tiled_sum_reduce(
 #define OUTD half
 
 int main(int argc, char **argv) {
-    HIP_CHECK( hipSetDevice(0) );
+    HIP_CHECK( hipSetDevice(7) );
+    srand(0);
 
     assert(argc==4);
     const int m = atoi(argv[1]);
@@ -54,14 +55,19 @@ int main(int argc, char **argv) {
     float* hScale_tensor;
 
     fp8 elem = __hip_cvt_float_to_fp8(1.0f, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
-    random_host_tensor<fp8>(hA, m * k); // full_host_tensor<fp8>(hA, m * k, elem);
-    random_host_tensor<fp8>(hB, n * k); // full_host_tensor<fp8>(hB, n * k, 0); // random_host_tensor<fp8>(hB, n * k);
-    // for (int i = 16; i < 32; i++) {
-    //     hB[i] = __hip_cvt_float_to_fp8(1.0f, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
+    random_host_tensor<fp8>(hA, m * k); //full_host_tensor<fp8>(hA, m * k, 0); //
+    random_host_tensor<fp8>(hB, n * k); //full_host_tensor<fp8>(hB, n * k, 0); //
+
+    // for (int i = 0; i < 1; i++) {
+    //     hA[1 * k + i] = __hip_cvt_float_to_fp8(1, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
+    // }
+    // for (int i = 0; i < k; i++) {
+    //     hB[1 * k + i] = __hip_cvt_float_to_fp8(0, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
     // }
 
-    random_host_tensor<float>(hScale_tensor, 1); 
-    host_tiled_sum_reduce<OUTD>(hA, hB, host_ref, hScale_tensor, m, n, k);
+    random_host_tensor<float>(hScale_tensor, 1);
+    // hScale_tensor[0] = 1;
+    host_skinny_gemm<OUTD>(hA, hB, host_ref, hScale_tensor, m, n, k);
 
     // Device tensors
     fp8 *dA, *dB;
@@ -73,7 +79,7 @@ int main(int argc, char **argv) {
     tensor_h2d<float>(hScale_tensor, dScale_tensor, 1);
 
     HIP_CHECK( hipDeviceSynchronize() );
-    async_gemm(dA, dB, dD, dScale_tensor, m, n, k);
+    skinny_gemm_notorch(dA, dB, dD, dScale_tensor, m, n, k);
     HIP_CHECK( hipDeviceSynchronize() );
 
     // Transfer result and free device tensors
@@ -93,6 +99,10 @@ int main(int argc, char **argv) {
         sum_delta += delta;
         max_delta = (delta > max_delta) ? delta : max_delta;
         // std::cout << (float) host_ref[k] << ":" << (float) host_result[k] << ", ";
+        // std::cout << k / n << "," << k % n << ":" << (float) host_result[k] << ", ";
+        // std::cout << k << ":" << (float) host_result[k] << ", ";
+        // std::cout << k / n << "," << k % n << ":" << delta << ", ";
+        // std::cout << k << ":" << delta << ", ";
     }
     std::cout << "{\"max_delta\": " << max_delta << ", \"total_delta\": " << sum_delta << "}";
 
