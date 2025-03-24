@@ -3,12 +3,13 @@
 #include "./mfma_16x16x32_consumer.cu"
 #include "./mfma_32x32x16_consumer.cu"
 
-template<int CONSUMERS, int B_LANES, int QSIZE>
+template<int B_LANES, int QSIZE>
 void __device__ consume_tiles_sparse_16x16x64(
     fp8* A_buffer,
     fp8* B_buffer,
     half* D,
     float scale,
+    const int consumers,
     int* queue,
     int &index,
     int &p_state,
@@ -20,12 +21,13 @@ void __device__ consume_tiles_sparse_16x16x64(
     const int k_blocks
 );
 
-template<int CONSUMERS, int B_LANES, int QSIZE>
+template<int B_LANES, int QSIZE>
 void __device__ consume_tiles_dense_16x16x32(
     fp8* A_buffer,
     fp8* B_buffer,
     half* D,
     float scale,
+    const int consumers,
     int* queue,
     int &index,
     int &p_state,
@@ -37,12 +39,13 @@ void __device__ consume_tiles_dense_16x16x32(
     const int k_blocks
 );
 
-template<int CONSUMERS, int B_LANES, int QSIZE>
+template<int B_LANES, int QSIZE>
 void __device__ consume_tiles_dense_32x32x16(
     fp8* A_buffer,
     fp8* B_buffer,
     half* D,
     float scale,
+    const int consumers,
     int* queue,
     int &index,
     int &p_state,
@@ -54,12 +57,13 @@ void __device__ consume_tiles_dense_32x32x16(
     const int k_blocks
 );
 
-template<int CONSUMERS, int B_LANES, int QSIZE, int OP_M>
+template<int B_LANES, int QSIZE, int OP_M>
 void __device__ consume_tiles(
     fp8* A_buffer,
     fp8* B_buffer,
     half* D,
     float scale,
+    const int consumers,
     int* queue,
     int &index,
     int &p_state,
@@ -71,13 +75,13 @@ void __device__ consume_tiles(
     const int k_blocks
 ) {
     if constexpr (OP_M == 8) {
-        consume_tiles_sparse_16x16x64<CONSUMERS, B_LANES, QSIZE>(A_buffer, B_buffer, D, scale, queue, index, p_state,
+        consume_tiles_sparse_16x16x64<B_LANES, QSIZE>(A_buffer, B_buffer, D, scale, consumers, queue, index, p_state,
                                                                  role_id, dropped_rows, dropped_cols, n, k, k_blocks);
     } else if constexpr (OP_M == 16) {
-        consume_tiles_dense_16x16x32<CONSUMERS, B_LANES, QSIZE>(A_buffer, B_buffer, D, scale, queue, index, p_state,
+        consume_tiles_dense_16x16x32<B_LANES, QSIZE>(A_buffer, B_buffer, D, scale, consumers, queue, index, p_state,
                                                                 role_id, dropped_rows, dropped_cols, n, k, k_blocks);
     } else if constexpr (OP_M == 32) {
-        consume_tiles_dense_32x32x16<CONSUMERS, B_LANES, QSIZE>(A_buffer, B_buffer, D, scale, queue, index, p_state,
+        consume_tiles_dense_32x32x16<B_LANES, QSIZE>(A_buffer, B_buffer, D, scale, consumers, queue, index, p_state,
                                                                 role_id, dropped_rows, dropped_cols, n, k, k_blocks);
     }
 }

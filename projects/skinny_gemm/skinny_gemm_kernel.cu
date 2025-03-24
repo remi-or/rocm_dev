@@ -3,12 +3,15 @@
 
 // TODO: try uint16 for the p state
 
-template<int B_LANES, int A_PRODUCERS, int B_PRODUCERS, int CONSUMERS, int QSIZE, int OP_M>
+template<int B_LANES, int QSIZE, int OP_M>
 void __global__ _skinny_gemm_kernel(
     const fp8* __restrict__ A,
     const fp8* __restrict__ B,
     half* __restrict__ D,
     const float* scale_tensor,
+    const int A_producers,
+    const int B_producers,
+    const int consumers,
     const int m,
     const int n,
     const int k,
@@ -32,10 +35,10 @@ void __global__ _skinny_gemm_kernel(
 
     // Infer warp-specialization-related variables
     const int warp_id = get_warp_id();
-    int role_id = (warp_id < A_PRODUCERS) ? warp_id : (warp_id - A_PRODUCERS);
-        role_id = (warp_id < A_PRODUCERS + B_PRODUCERS) ? role_id : (role_id - B_PRODUCERS);
+    int role_id = (warp_id < A_producers) ? warp_id : (warp_id - A_producers);
+        role_id = (warp_id < A_producers + B_producers) ? role_id : (role_id - B_producers);
     int index = role_id;
-    int p_state = (warp_id >= A_PRODUCERS + B_PRODUCERS);
+    int p_state = (warp_id >= A_producers + B_producers);
 
     // Tiles loop
     const int tiles_per_row = CDIV(n, WARPTILE_N);
@@ -61,10 +64,11 @@ void __global__ _skinny_gemm_kernel(
         curr_n -= dropped_cols; // make sure we are in the bounds of B
 
         // A producer warp
-        if (warp_id < A_PRODUCERS) {
-            produce_A_tiles<A_PRODUCERS, B_LANES, QSIZE, OP_M>(
+        if (warp_id < A_producers) {
+            produce_A_tiles<B_LANES, QSIZE, OP_M>(
                 A + curr_k,
                 &A_buffer[0],
+                A_producers,
                 &queue[0],
                 index, p_state, role_id,
                 k, k_blocks,
@@ -72,23 +76,25 @@ void __global__ _skinny_gemm_kernel(
             );
         }
         // B producer warp
-        else if (warp_id < A_PRODUCERS + B_PRODUCERS) {
+        else if (warp_id < A_producers + B_producers) {
             // TODO: investigate the reuse parameter forB (true = faster but goes wrong because no sc1)
-            produce_B_tiles<B_PRODUCERS, B_LANES, QSIZE, OP_M>(
+            produce_B_tiles<B_LANES, QSIZE, OP_M>(
                 B + curr_n * B_stride + curr_k,
                 &B_buffer[0],
+                B_producers,
                 &queue[1],
                 index, p_state, role_id,
                 B_stride, k_blocks
             );
         }
         // Consumers warp
-        else if (warp_id < A_PRODUCERS + B_PRODUCERS + CONSUMERS) {
-            consume_tiles<CONSUMERS, B_LANES, QSIZE, OP_M>(
+        else if (warp_id < A_producers + B_producers + consumers) {
+            consume_tiles<B_LANES, QSIZE, OP_M>(
                 &A_buffer[0],
                 &B_buffer[0],
                 D + curr_n,
                 scale_tensor[0],
+                consumers,
                 &queue[0],
                 index, p_state, role_id,
                 dropped_rows, dropped_cols,

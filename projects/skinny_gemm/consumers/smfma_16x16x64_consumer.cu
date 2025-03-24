@@ -1,9 +1,10 @@
-template<int CONSUMERS, int B_LANES, int QSIZE>
+template<int B_LANES, int QSIZE>
 void __device__ consume_tiles_sparse_16x16x64(
     fp8* A_buffer,
     fp8* B_buffer,
     half* D,
     float scale,
+    const int consumers,
     int* queue,
     int &index,
     int &p_state,
@@ -93,9 +94,9 @@ void __device__ consume_tiles_sparse_16x16x64(
         }
 
         // Update index
-        index += CONSUMERS;
+        index += consumers;
         p_state = (index >= QSIZE) ? (p_state + 2) : p_state;
-        b += CONSUMERS;
+        b += consumers;
     }
 
     // Bring warps back in order

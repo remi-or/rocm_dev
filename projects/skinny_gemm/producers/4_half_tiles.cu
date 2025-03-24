@@ -1,10 +1,11 @@
 #include "./../core.cu"
 
 // WARNING / TODO : tiles always hit cache AND are swizzled
-template<int PRODUCERS, int B_LANES, int QSIZE>
+template<int B_LANES, int QSIZE>
 void __device__ produce_4_half_tiles(
     const fp8* __restrict__ src,
     fp8* buffer,
+    const int producers,
     int* queue,
     int &index,
     int &p_state,
@@ -112,12 +113,12 @@ void __device__ produce_4_half_tiles(
         queue[2 * B_LANES * index] = p_state + 1;
 
         // Advance
-        src += WARPTILE_K * PRODUCERS;
+        src += WARPTILE_K * producers;
 
         // Update index
-        index += PRODUCERS;
+        index += producers;
         p_state = (index >= QSIZE) ? (p_state + 2) : p_state;
-        b += PRODUCERS;
+        b += producers;
     }
 
     // Bring warps back in order

@@ -56,9 +56,9 @@ void skinny_gemm_notorch(
         //         (A, B, D, scale_tensor, m, n, k, k, SK);
         //     break;
         case 32:
-            _skinny_gemm_kernel<B_LANES_, A_PRODUCERS_, B_PRODUCERS_, CONSUMERS_, QSIZE_, 32>
+            _skinny_gemm_kernel<B_LANES_, QSIZE_, 32>
                 <<<grid, block, 0, 0>>>
-                (A, B, D, scale_tensor, m, n, k, k, SK);
+                (A, B, D, scale_tensor, A_PRODUCERS_, B_PRODUCERS_, CONSUMERS_, m, n, k, k, SK);
             break;
     }
 }

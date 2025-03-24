@@ -2,7 +2,6 @@
 
 // WARNING / TODO : this producer always skips cache
 template<
-    int PRODUCERS,
     int LANES,
     int QSIZE,
     int OP_K,  // This is the size of the operation in the contiguous axis
@@ -12,6 +11,7 @@ template<
 void __device__ produce_n_full_tiles(
     const fp8* __restrict__ source,
     fp8* buffer,
+    const int producers,
     int* queue,
     int q_stride,
     int &index,
@@ -114,9 +114,9 @@ void __device__ produce_n_full_tiles(
         queue[2 * q_stride * index] = p_state + 1;
 
         // Update loop variables
-        index += PRODUCERS;
+        index += producers;
         p_state = (index >= QSIZE * LANES) ? (p_state + 2) : p_state;
-        b += PRODUCERS;
+        b += producers;
     }
 
     // Bring warps back in order
