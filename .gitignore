@@ -6,5 +6,7 @@ backups/
 data/
 build/
 
-async_gemm_wide/
 grid_results/
+
+material/
+stuff/
