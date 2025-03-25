@@ -29,8 +29,8 @@ __device__ void warpwiseQuantize(
 
 
 __device__ void warpwiseDequantize(
-    fp8x2* xQuantized,
-    float* xScales,
+    const fp8x2* xQuantized,
+    const float* xScales,
     half2* output
 ) {
     const int threadId = threadIdx.x;
@@ -52,9 +52,9 @@ __device__ void warpwiseDequantize(
 
     #pragma unroll
     for (int i = 0; i < PK_ELEMS_PER_THREAD; i++) {
-        float2 tmp = cast_to_f32x2_from_f8x2(reinterpret_cast<fp8_2>(xRegs[i]), __HIP_E4M3_FNUZ);
+        float2 tmp = dequantizeFp8x2(xRegs[i]);
         tmp *= scale;
-        regsHp[i] = __float22half2(tmp);
+        regsHp[i] = __float22half2_rn(tmp);
     }
 
     // Store back
@@ -96,10 +96,10 @@ __device__ void warpwiseDequantizeAccumulate(
 
     #pragma unroll
     for (int i = 0; i < PK_ELEMS_PER_THREAD; i++) {
-        float2 xy = cast_to_f32x2_from_f8x2(reinterpret_cast<fp8_2>(xRegs[i]), __HIP_E4M3_FNUZ);
-        xy *= cast_to_f32x2_from_f8x2(reinterpret_cast<fp8_2>(yRegs[i]), __HIP_E4M3_FNUZ);
+        // TODO: try dq and mul
+        float2 xy = dequantizeFp8x2(xRegs[i]) * dequantizeFp8x2(yRegs[i]);
         xy *= scale;
-        xyRegs[i] = __float22half2(xy);
+        xyRegs[i] = __float22half2_rn(xy);
     }
 
     // Store back
@@ -114,7 +114,7 @@ __device__ void warpwiseInplaceDQAQ( // Dequantize, Accumulate, Quantize in plac
     fp8x2* xQuantized,
     const fp8x2* yQuantized,
     float* xScales,
-    const float* yScales,
+    const float* yScales
 ) {
     const int threadId = threadIdx.x;
     const int warpId = threadIdx.x % WARPSIZE;
@@ -141,8 +141,7 @@ __device__ void warpwiseInplaceDQAQ( // Dequantize, Accumulate, Quantize in plac
     float2 regsFp[PK_ELEMS_PER_THREAD];
 #pragma unroll
     for (int i = 0; i < PK_ELEMS_PER_THREAD; i++) {
-        regsFp[i] = cast_to_f32x2_from_f8x2(reinterpret_cast<fp8_2>(xRegs[i]), __HIP_E4M3_FNUZ);
-        regsFp[i] *= cast_to_f32x2_from_f8x2(reinterpret_cast<fp8_2>(yRegs[i]), __HIP_E4M3_FNUZ);
+        regsFp[i] = dequantizeFp8x2(xRegs[i]) * dequantizeFp8x2(yRegs[i]);
         regsFp[i] *= scale;
     }
 

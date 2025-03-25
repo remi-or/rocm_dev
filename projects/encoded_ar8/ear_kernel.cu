@@ -1,6 +1,4 @@
 #include "./ear_qdq.cu"
-#include <mscclpp/concurrency_device.hpp>
-
 
 // Setup node's mesh connections
 template <class T>
@@ -28,15 +26,12 @@ __device__ void crossReduceOneRound(
     // Figure out peer channels for comms
     int partnerId = (partnerRank < localRank) ? partnerRank : partnerRank - 1;
 
-    DeviceHandle<mscclpp::PortChannel>& outgoingChannel;
-    DeviceHandle<mscclpp::PortChannel>& incomingChannel;
-    if (outgoingBufferIsA) {
-        outgoingChannel = constChannelsAtoBs[partnerId];
-        incomingChannel = constChannelsAtoBs[partnerId];
-    } else {
-        outgoingChannel = constChannelsBtoAs[partnerId];
-        incomingChannel = constChannelsBtoAs[partnerId];
-    }
+    DeviceHandle<mscclpp::PortChannel>& outgoingChannel = (
+        outgoingBufferIsA ? constChannelsAtoBs[partnerId] : constChannelsBtoAs[partnerId]
+    );
+    DeviceHandle<mscclpp::PortChannel>& incomingChannel = (
+        outgoingBufferIsA ? constChannelsAtoBs[partnerId] : constChannelsBtoAs[partnerId]
+    );
 
     if (globalThreadId == 0) {
         // Send data to the partner node, without waiting for it to be received
@@ -68,7 +63,7 @@ __device__ void crossReduceOneRound(
 }
 
 
-__device__ void encodedCrossReduce(
+__global__ void encodedCrossReduce(
     uint8_t* __restrict__ commBufferA,
     uint8_t* __restrict__ commBufferB,
     half2* __restrict__ inputOutputBuffer, // the input and output buffer

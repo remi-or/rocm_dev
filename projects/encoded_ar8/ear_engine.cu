@@ -1,12 +1,3 @@
-#include <torch/extension.h>
-#include <vector>
-//#include <mpi.h>
-#include <mscclpp/core.hpp>
-#include <mscclpp/utils.hpp>
-#include <mscclpp/port_channel.hpp>
-#include <mscclpp/memory_channel.hpp>
-#include <c10/hip/HIPStream.h>
-
 #include "./ear_kernel.cu"
 
 class EarEngine {
@@ -24,9 +15,17 @@ public:
         TORCH_CHECK(x.is_contiguous(), "Input tensor must be contiguous");
         TORCH_CHECK(x.scalar_type() == torch::ScalarType::Half, "Input tensor must be float16 (Half) type");
 
+        // Infer number of blocks needed
+        const size_t numElements = x.numel();
+        assert(numElements % ELEMS_PER_BLOCK == 0);
+
+        const size_t numBlocks = numElements / ELEMS_PER_BLOCK;
+        dim3 grid(numBlocks);
+        dim3 block(THREADS_PER_BLOCK);
+
         // Allocate two buffers of the same size as the input tensor
         // TODO: reduce the size of this buffer, it's larger than needed
-        allocateCommsBuffers(x.numel() * x.element_size());
+        allocateCommsBuffers(numElements);
         printf("R%d: Allocated input buffers.\n", rank_);
 
         // Setup mesh connections (A)
@@ -45,7 +44,13 @@ public:
         startProxy();
 
         CUDATHROW(cudaDeviceSynchronize());
-        encodedCrossReduce(commBufferA_.get(), commBufferB_.get(), x, rank_, x.numel());
+        encodedCrossReduce<<<grid, block>>>(
+            commBufferA_.get(),
+            commBufferB_.get(),
+            (half2*)x.data_ptr(),
+            rank_,
+            numElements
+        );
         CUDATHROW(cudaDeviceSynchronize());
         return x;
     }
@@ -69,10 +74,12 @@ private:
         chanService_ = std::make_shared<mscclpp::ProxyService>();
     }
 
-    void allocateCommsBuffers(size_t bytes) {
-        commBufferA_ = mscclpp::GpuBuffer<uint8_t>(bytes).memory();
-        commBufferB_ = mscclpp::GpuBuffer<uint8_t>(bytes).memory();
-        commBufferSize_ = bytes;
+    void allocateCommsBuffers(size_t numElements) {
+        const int numScales = numElements / (WARPSIZE * ELEMS_PER_THREAD);
+        const int bytesToSend = numElements + numScales * sizeof(float);
+        commBufferA_ = mscclpp::GpuBuffer<uint8_t>(bytesToSend).memory();
+        commBufferB_ = mscclpp::GpuBuffer<uint8_t>(bytesToSend).memory();
+        commBufferSize_ = bytesToSend;
     }
 
     void setupMeshConnections(std::vector<DeviceHandle<mscclpp::PortChannel>>& portChannels, void* send_buff,
@@ -115,7 +122,7 @@ private:
                 service->portChannel(service->buildAndAddSemaphore(*communicator_, connections[i]),
                                      service->addMemory(remoteRegMemories[i].get()), service->addMemory(sendBufRegMem))));
         }
-        printf("R%d: Created %d channels.\n", rank_, portChannels.size());
+        printf("R%d: Created %zu channels.\n", rank_, portChannels.size());
 
         // Setup communicator
         communicator_->setup();
