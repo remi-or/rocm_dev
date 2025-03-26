@@ -1,6 +1,6 @@
 apt-get update
-apt-get install libnuma-dev
-apt-get install libopenmpi-dev
+apt-get -y install libnuma-dev
+apt-get -y install libopenmpi-dev
 
 cd /tmp
 git clone https://github.com/microsoft/mscclpp.git
@@ -14,3 +14,5 @@ make -j
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local/mscclpp -DMSCCLPP_BUILD_PYTHON_BINDINGS=OFF ..
 make -j mscclpp mscclpp_static
 sudo make install/fast
+
+export LD_LIBRARY_PATH=/usr/local/mscclpp/lib:$LD_LIBRARY_PATH

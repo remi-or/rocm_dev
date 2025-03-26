@@ -38,6 +38,7 @@ __device__ void crossReduceOneRound(
         printf("Rank %d: sending data to rank %d\n", localRank, partnerRank);
         outgoingChannel.put(0, bytesToSend);
         outgoingChannel.signal();
+        outgoingChannel.flush();
         // QUESTION: should I flush here?
         // Wait for the partner data to be received
         incomingChannel.wait();
@@ -56,7 +57,7 @@ __device__ void crossReduceOneRound(
     // Wait for the partner node to have received the data
     if (globalThreadId == 0) {
         printf("Rank %d: waiting for signal flush to rank %d\n", localRank, partnerRank);
-        outgoingChannel.flush();
+        // outgoingChannel.flush();
         printf("Rank %d: flushing done\n", localRank);
     }
     deviceSyncer.sync(gridDim.x, -1);
