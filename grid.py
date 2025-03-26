@@ -7,7 +7,7 @@ import subprocess
 import itertools
 import random
 
-from project_class import Project
+from class_project import Project
 
 
 def skip(params: Dict[str, int]) -> bool:
@@ -150,12 +150,12 @@ if __name__ == "__main__":
 
     substitutions = {
         "B_LANES_": [1, 2, 3, 4],
-        "OPS": [2, 4, 8],
+        "OPS_": [2, 4, 8],
         "A_PRODUCERS_": [2, 3, 4],
         "B_PRODUCERS_": [2, 4, 6, 7, 8],
         "CONSUMERS_": [2, 3, 4],
         "QSIZE_": [2, 3, 4, 5],
-        "SK": [2, 3, 5], # [1],
+        "SK_": [2, 3, 5], # [1],
     }
 
     # Parse arguments

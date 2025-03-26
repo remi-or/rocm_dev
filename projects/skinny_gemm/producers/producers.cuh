@@ -33,12 +33,12 @@ void __device__ produce_B_tiles(
     int &index,
     int &p_state,
     int &role_id,
-    int B_stride,
+    int b_stride,
     const int k_blocks
 ) {
     static constexpr int OP_N = (OP_M == 32) ? 32 : 16;
     static constexpr int OP_K = 512 / OP_M;
     produce_n_full_tiles<B_LANES, QSIZE, OP_K, OP_N, OPS, false>(B, B_buffer, B_producers, queue, 1, index, p_state, role_id,
                                                                          0, // for B we offset the tiles to not load OOB
-                                                                         B_stride, k_blocks);
+                                                                         b_stride, k_blocks);
 }

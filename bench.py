@@ -2,7 +2,7 @@ import argparse
 import numpy as np
 import json
 
-from project_class import Project
+from class_project import Project
 
 
 

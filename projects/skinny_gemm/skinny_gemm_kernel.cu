@@ -9,14 +9,14 @@ void __global__ _skinny_gemm_kernel(
     const fp8* __restrict__ B,
     half* __restrict__ D,
     const float* scale_tensor,
-    const int A_producers,
-    const int B_producers,
-    const int consumers,
     const int m,
     const int n,
     const int k,
-    const int B_stride,
-    const int split_k
+    const int b_stride,
+    const int split_k,
+    const int A_producers,
+    const int B_producers,
+    const int consumers
 ) {
     // Compile-time constants
     static constexpr int WARPTILE_M = OP_M; // is either 8, 16 or 32
@@ -79,12 +79,12 @@ void __global__ _skinny_gemm_kernel(
         else if (warp_id < A_producers + B_producers) {
             // TODO: investigate the reuse parameter forB (true = faster but goes wrong because no sc1)
             produce_B_tiles<B_LANES, QSIZE, OP_M, OPS>(
-                B + curr_n * B_stride + curr_k,
+                B + curr_n * b_stride + curr_k,
                 &B_buffer[0],
                 B_producers,
                 &queue[1],
                 index, p_state, role_id,
-                B_stride, k_blocks
+                b_stride, k_blocks
             );
         }
         // Consumers warp

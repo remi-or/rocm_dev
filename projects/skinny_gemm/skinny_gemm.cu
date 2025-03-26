@@ -3,21 +3,36 @@
 #define LAUNCH_ONE_SKINNY_GEMM(__bl, __qs, __opm, __ops) _skinny_gemm_kernel                      \
     <__bl, __qs, __opm, __ops>                                                                  \
     <<<grid, block, 0, stream>>>                                                              \
-    (A, B, D, scale_tensor, A_producers, B_producers, consumers, m, n, k, B_stride, split_k);
+    (A, B, D, scale_tensor, m, n, k, b_stride, split_k, A_producers, B_producers, consumers);
 
 #define COND_LAUCNH_ONE_SKINNY_GEMM(__bl, __qs, __om, __ops) \
     (b_lanes == __bl && qsize == __qs && op_m == __om && ops == __ops) { \
         LAUNCH_ONE_SKINNY_GEMM(__bl, __qs, __om, __ops); \
     }
 
-void skinny_gemm_notorch(
+void skinny_gemm(
+// Tensors
     const fp8* __restrict__ A,
     const fp8* __restrict__ B,
     half* __restrict__ D,
     const float* scale_tensor,
+// Shapes
     const int m,
     const int n,
-    const int k
+    const int k,
+    const int b_stride,
+    const int split_k,
+// Async non-templated
+    const int A_producers,
+    const int B_producers,
+    const int consumers,
+// Async templated
+    const int b_lanes,
+    const int qsize,
+    const int op_m,
+    const int ops,
+// Cuda-related
+    hipStream_t stream
 ) {
 
     // Deduce other constants
@@ -38,21 +53,6 @@ void skinny_gemm_notorch(
     //     std::cerr << "k = " << k << " is not divisible by WARPTILE_K = " << WARPTILE_K << std::endl;
     //     exit(1);
     // }
-
-    // Macro-related renames
-    int b_lanes = B_LANES_;
-    int qsize = QSIZE_;
-    int op_m = OP_M_;
-    int ops = OPS_;
-
-    int A_producers = A_PRODUCERS_;
-    int B_producers = B_PRODUCERS_;
-    int consumers = CONSUMERS_;
-
-    int split_k = SK_;
-    int B_stride = k;
-
-    hipStream_t stream = 0;
 
     // Prepare kernel launch
     dim3 grid(CU);
@@ -311,105 +311,113 @@ void skinny_gemm_notorch(
 }
 
 
+void skinny_gemm_fastpath(
+    const fp8* __restrict__ A, const fp8* __restrict__ B, half* __restrict__ D, const float* scale_tensor,
+    const int m, const int n, const int k
+) {
+    int b_stride = k;
+    int split_k = SK_;
+
+    int A_producers = A_PRODUCERS_;
+    int B_producers = B_PRODUCERS_;
+    int consumers = CONSUMERS_;
+
+    int b_lanes = B_LANES_;
+    int qsize = QSIZE_;
+    int op_m = OP_M_;
+    int ops = OPS_;
+
+    hipStream_t stream = reinterpret_cast<hipStream_t>(0);
+
+    skinny_gemm_caller(A, B, D, scale_tensor,
+                       m, n, k, b_stride, split_k,
+                       A_producers, B_producers, consumers,
+                       b_lanes, qsize, op_m, ops,
+                       stream);
+}
+
+void skinny_gemm_tb(
+    torch::Tensor& A,
+    torch::Tensor& B,
+    torch::Tensor& D,
+    torch::Tensor& scale_tensor,
+    int64_t split_k,
+    int64_t A_producers,
+    int64_t B_producers,
+    int64_t consumers,
+    int64_t b_lanes,
+    int64_t qsize,
+    int64_t ops
+) {
+    // Retrieve pointers
+    const fp8* __restrict__ A_ = (const fp8* __restrict__) A.data_ptr();
+    const fp8* __restrict__ B_ = (const fp8* __restrict__) B.data_ptr();
+    half* __restrict__ D_ = (half* __restrict__) D.data_ptr();
+    float* __restrict__ scale_tensor_ = (float* __restrict__) scale_tensor.data_ptr();
+
+    // Retrieve shapes
+    const int m = A.size(0);
+    const int n = B.size(1);
+    const int k = A.size(1);
+    const int b_stride = B.stride(1);
+
+    // Depending on the number of rows in A, we have different OP_M
+    int op_m;
+    if (m <= 8)       { op_m = 8;  }
+    else if (m <= 16) { op_m = 16; }
+    else              { op_m = 32; }
+
+    // Retrieve stream
+    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
+
+    // Device guard
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(A));
+
+    // Launch kernel (branched on B_LANES)
+    skinny_gemm(
+        A_, B_, D_, scale_tensor_,
+        m, n, k, b_stride, split_k,
+        A_producers, B_producers, consumers,
+        b_lanes, qsize, op_m, ops,
+        stream
+    );
+}
 
 
-// void skinny_gemm(
-//     torch::Tensor& A,
-//     torch::Tensor& B,
-//     torch::Tensor& D,
-//     torch::Tensor& scale_tensor,
-//     int64_t A_producers,
-//     int64_t B_producers,
-//     int64_t consumers,
-//     int64_t b_lanes,
-//     int64_t split_k
-// ) {
-//     // Depending on the number of rows in A, we have different OP_M
-//     int OP_M;
-//     if (m <= 8)       { OP_M = 8;  }
-//     else if (m <= 16) { OP_M = 16; }
-//     else              { OP_M = 32; }
+class HFRK_skinny_gemm {
+private:
+    int world_size;
 
-//     // Deduce other constants
-//     const int OP_K = 512 / OP_M;
-//     const int WARPTILE_M = OP_M;
-//     const int WARPTILE_K = OP_K * OPS;
+public:
+    HFRK_skinny_gemm(int world_size_)
+        : world_size(world_size_) {
+    }
 
-//     // Retrieve shapes
-//     const int m = A.size(0);
-//     const int n = B.size(1);
-//     const int k = A.size(1);
-//     const int B_stride = B.stride(1);
+    ~HFRK_skinny_gemm() {
+    }
 
-//     // Retrieve pointers
-//     const fp8* __restrict__ A_ = (const fp8* __restrict__) A.data_ptr();
-//     const fp8* __restrict__ B_ = (const fp8* __restrict__) B.data_ptr();
-//     half* __restrict__ D_ = (half* __restrict__) D.data_ptr();
-//     float* __restrict__ scale_tensor_ = (float* __restrict__) scale_tensor.data_ptr();
-
-//     // Check shape
-//     if (m > WARPTILE_M) {
-//         std::cerr << "m = " << m << " is greater than WARPTILE_M = " << WARPTILE_M << std::endl;
-//         exit(1);
-//     }
-//     if (n % 2 != 0) {
-//         std::cerr << "n = " << n << " is not even" << std::endl;
-//         exit(1);
-//     }
-//     if (k % WARPTILE_K != 0) {
-//         std::cerr << "k = " << k << " is not divisible by WARPTILE_K = " << WARPTILE_K << std::endl;
-//         exit(1);
-//     }
-
-//     // Prepare kernel launch
-//     dim3 grid(CU);
-//     dim3 block(WARPSIZE * (A_producers + B_producers + consumers));
-//     const at::cuda::OptionalCUDAGuard device_guard(device_of(A));
-//     const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-
-//     // Launch kernel (branched on B_LANES)
-//     switch (b_lanes) {
-//         case 2:
-//             LAUNCH_SKINNY_GEMM(2, 4);
-//         case 3:
-//             LAUNCH_SKINNY_GEMM(3, 3);
-//         case 4:
-//             LAUNCH_SKINNY_GEMM(4, 3);
-//         case 5:
-//             LAUNCH_SKINNY_GEMM(5, 2);
-//     }
-// }
+    void skinny_gemm_torch_binding(
+        torch::Tensor& A,
+        torch::Tensor& B,
+        torch::Tensor& D,
+        torch::Tensor& scale_tensor,
+        int64_t split_k,
+        int64_t A_producers,
+        int64_t B_producers,
+        int64_t consumers,
+        int64_t b_lanes,
+        int64_t qsize,
+        int64_t ops,
+    ) {
+        skinny_gemm_tb(A, B, D, scale_tensor, split_k, A_producers, B_producers, consumers, b_lanes, qsize, ops);
+    }
+};
 
 
-// class HFRK_skinny_gemm {
-// private:
-//     int world_size;
+#define PYBIND11_MODULE_EXPAND(NAME, MODULE) PYBIND11_MODULE(NAME, MODULE)
 
-// public:
-//     HFRK_skinny_gemm(int world_size_)
-//         : world_size(world_size_) {
-//     }
-
-//     ~HFRK_skinny_gemm() {
-//     }
-
-//     void skinny_gemm16(
-//         torch::Tensor& A,
-//         torch::Tensor& B,
-//         torch::Tensor& D,
-//         torch::Tensor& scale_tensor,
-//         int64_t b_lanes,
-//         int64_t split_k
-//     ) {
-//         skinny_gemm(A, B, D, scale_tensor, b_lanes, split_k);
-//     }
-// };
-
-
-// #define PYBIND11_MODULE_EXPAND(NAME, MODULE) PYBIND11_MODULE(NAME, MODULE)
-
-// PYBIND11_MODULE_EXPAND(TORCH_EXTENSION_NAME, m) {
-//     py::class_<HFRK_skinny_gemm>(m, "HFRK_skinny_gemm")
-//         .def(py::init<int>())
-//         .def("skinny_gemm16", &HFRK_skinny_gemm::skinny_gemm16);
-// }
+PYBIND11_MODULE_EXPAND(TORCH_EXTENSION_NAME, m) {
+    py::class_<HFRK_skinny_gemm>(m, "HFRK_skinny_gemm")
+        .def(py::init<int>())
+        .def("skinny_gemm_torch_binding", &HFRK_skinny_gemm::skinny_gemm_torch_binding);
+}
