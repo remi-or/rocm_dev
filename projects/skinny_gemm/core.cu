@@ -30,16 +30,17 @@ using uint64 = unsigned long long;
 #define NB_BANKS 32
 #define CU 304
 
-// User defined constants
-#define OPS 2
-
 // Parameters
 #define B_LANES_ 1
+#define QSIZE_ 1
+#define OP_M_ 8
+#define OPS_ 2
+
 #define A_PRODUCERS_ 1
 #define B_PRODUCERS_ 1
 #define CONSUMERS_ 1
-#define QSIZE_ 1
-#define SK 1
+
+#define SK_ 1
 
 // Macros
 #define NUM_WARPTILE_K(k, split_k) (((k / WARPTILE_K) / split_k))

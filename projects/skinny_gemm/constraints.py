@@ -7,7 +7,7 @@ def fits_in_gemm(
     b_lanes: int,
     qsize: int,
     op_m: int,
-    ops: int = 4,
+    ops: int,
     max_smem: int = 65536,
     verbose: bool = False
 ) -> bool:
@@ -43,8 +43,9 @@ if __name__ == "__main__":
     for b_lanes in [1, 2, 3, 4, 5, 6]:
         for qsize in [1, 2, 3, 4, 5, 6]:
             for op_m in [8, 16, 32]:
+                for ops in [2, 4, 8]:
 
-                if fits_in_gemm(b_lanes, qsize, op_m, verbose=False):
-                    branch_type = "if" if first_if else "else if"
-                    first_if = False
-                    print(f"{branch_type} COND_LAUCNH_ONE_SKINNY_GEMM({b_lanes}, {qsize}, {op_m});")
+                    if fits_in_gemm(b_lanes, qsize, op_m, ops, verbose=False):
+                        branch_type = "if" if first_if else "else if"
+                        first_if = False
+                        print(f"{branch_type} COND_LAUCNH_ONE_SKINNY_GEMM({b_lanes}, {qsize}, {op_m}, {ops});")

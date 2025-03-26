@@ -1,6 +1,6 @@
 // TODO: non-atomic exit path if split-k is equal to 1
 
-template<int B_LANES, int QSIZE>
+template<int B_LANES, int QSIZE, int OPS>
 void __device__ consume_tiles_dense_32x32x16(
     fp8* A_buffer,
     fp8* B_buffer,

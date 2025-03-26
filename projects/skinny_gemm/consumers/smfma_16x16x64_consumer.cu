@@ -1,4 +1,4 @@
-template<int B_LANES, int QSIZE>
+template<int B_LANES, int QSIZE, int OPS>
 void __device__ consume_tiles_sparse_16x16x64(
     fp8* A_buffer,
     fp8* B_buffer,

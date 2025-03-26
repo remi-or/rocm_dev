@@ -6,6 +6,7 @@ template<
     int QSIZE,
     int OP_K,  // This is the size of the operation in the contiguous axis
     int OP_AD, // This is the size of the operation in the strided axis
+    int OPS,
     bool REUSE
 >
 void __device__ produce_n_full_tiles(

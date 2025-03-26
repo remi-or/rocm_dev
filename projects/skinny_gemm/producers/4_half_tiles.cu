@@ -1,7 +1,7 @@
 #include "./../core.cu"
 
 // WARNING / TODO : tiles always hit cache AND are swizzled
-template<int B_LANES, int QSIZE>
+template<int B_LANES, int QSIZE, int OPS>
 void __device__ produce_4_half_tiles(
     const fp8* __restrict__ src,
     fp8* buffer,
