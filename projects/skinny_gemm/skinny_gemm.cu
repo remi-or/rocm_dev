@@ -1,23 +1,12 @@
 #include "./skinny_gemm_kernel.cu"
 
-#define LAUNCH_ONE_SKINNY_GEMM(B_LANES, QSIZE, OP_M) _skinny_gemm_kernel                      \
-    <B_LANES_, QSIZE_, OP_M>                                                                  \
+#define LAUNCH_ONE_SKINNY_GEMM(__bl, __qs, __opm) _skinny_gemm_kernel                      \
+    <__bl, __qs, __opm>                                                                  \
     <<<grid, block, 0, stream>>>                                                              \
     (A, B, D, scale_tensor, A_producers, B_producers, consumers, m, n, k, B_stride, split_k);
 
-#define LAUNCH_SKINNY_GEMM(B_LANES, QSIZE)              \
-    switch (OP_M) {                                     \
-        case 8:                                         \
-            LAUNCH_ONE_SKINNY_GEMM(B_LANES, QSIZE, 8);  \
-            break;                                      \
-        case 16:                                        \
-            LAUNCH_ONE_SKINNY_GEMM(B_LANES, QSIZE, 16); \
-            break;                                      \
-        case 32:                                        \
-            LAUNCH_ONE_SKINNY_GEMM(B_LANES, QSIZE, 32); \
-            break;                                      \
-    }
-
+#define COND_LAUCNH_ONE_SKINNY_GEMM(__bl, __qs, __om) \
+    (B_LANES == __bl && QSIZE == __ql && OP_M == __om) { LAUNCH_ONE_SKINNY_GEMM(__bl, __ql, __om); }
 
 void skinny_gemm_notorch(
     const fp8* __restrict__ A,
@@ -48,27 +37,108 @@ void skinny_gemm_notorch(
         exit(1);
     }
 
-    // Prepare kernel launch
-    int B_stride = k;
-    int split_k = SK;
+    // Macro-related renames
     int A_producers = A_PRODUCERS_;
     int B_producers = B_PRODUCERS_;
     int consumers = CONSUMERS_;
+    int B_stride = k;
+    int split_k = SK;
     hipStream_t stream = 0;
 
+    // Prepare kernel launch
     dim3 grid(CU);
     dim3 block((A_producers + B_producers + consumers) * WARPSIZE);
 
     // Dispatch to the correct kernel
-    if constexpr (OP_M_ == 8) {
-        LAUNCH_ONE_SKINNY_GEMM(B_LANES_, QSIZE_, 8);
-    }
-    else if constexpr (OP_M_ == 16) {
-        LAUNCH_ONE_SKINNY_GEMM(B_LANES_, QSIZE_, 16);
-    }
-    else {
-        LAUNCH_ONE_SKINNY_GEMM(B_LANES_, QSIZE_, 32);
-    }
+    if COND_LAUCNH_ONE_SKINNY_GEMM(1, 1, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(1, 1, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(1, 1, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(1, 2, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(1, 2, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(1, 2, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(1, 3, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(1, 3, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(1, 3, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(1, 4, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(1, 4, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(1, 4, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(1, 5, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(1, 5, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(1, 5, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(1, 6, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(1, 6, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(1, 6, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 1, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 1, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 1, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 2, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 2, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 2, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 3, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 3, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 3, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 4, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 4, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 4, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 5, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 5, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 5, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 6, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 6, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(2, 6, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(3, 1, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(3, 1, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(3, 1, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(3, 2, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(3, 2, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(3, 2, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(3, 3, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(3, 3, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(3, 3, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(3, 4, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(3, 4, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(3, 4, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(3, 5, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(3, 5, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(3, 6, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(3, 6, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(4, 1, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(4, 1, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(4, 1, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(4, 2, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(4, 2, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(4, 2, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(4, 3, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(4, 3, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(4, 3, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(4, 4, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(4, 4, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(4, 5, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(4, 5, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(4, 6, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(4, 6, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(5, 1, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(5, 1, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(5, 1, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(5, 2, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(5, 2, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(5, 2, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(5, 3, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(5, 3, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(5, 4, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(5, 4, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(5, 5, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(5, 5, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(6, 1, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(6, 1, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(6, 1, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(6, 2, 8);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(6, 2, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(6, 2, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(6, 3, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(6, 3, 32);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(6, 4, 16);
+    else if COND_LAUCNH_ONE_SKINNY_GEMM(6, 4, 32);
 }
 
 
