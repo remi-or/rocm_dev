@@ -1,15 +1,20 @@
 #include "./skinny_gemm_kernel.cu"
 
-// #define LAUNCH_ONE_SKINNY_GEMM(__bl, __qs, __opm, __ops) _skinny_gemm_kernel                      \
-//     <__bl, __qs, __opm, __ops>                                                                  \
-//     <<<grid, block, 0, stream>>>                                                              \
-//     (A, B, D, scale_tensor, m, n, k, b_stride, split_k, A_producers, B_producers, consumers);
-
 #define COND_LAUCNH_ONE_SKINNY_GEMM(__bl, __qs, __om, __ops)                                         \
     else if (b_lanes == __bl && qsize == __qs && op_m == __om && ops == __ops) {                     \
         _skinny_gemm_kernel<__bl, __qs, __om, __ops><<<grid, block, 0, stream>>>(                    \
             A, B, D, scale_tensor, m, n, k, b_stride, split_k, A_producers, B_producers, consumers); \
     }
+
+enum SkinnyGemmReturnCode {
+    SUCCESS = 0,
+    M_ABOVE_WARPTILE_M = 1,
+    N_NOT_EVEN = 2,
+    K_NOT_DIVISIBLE_BY_WARPTILE_K = 3,
+    TOO_MANY_WARPS = 4,
+    QSIZE_TOO_SMALL = 5,
+    INVALID_CONFIG = 6
+};
 
 int skinny_gemm(
 // Tensors
@@ -44,28 +49,28 @@ int skinny_gemm(
     // Check shapes
     if (m > WARPTILE_M) {
         std::cerr << "m = " << m << " is greater than WARPTILE_M = " << WARPTILE_M << std::endl;
-        return 1;
+        return SkinnyGemmReturnCode::M_ABOVE_WARPTILE_M;
     }
     if (n % 2 != 0) {
         std::cerr << "n = " << n << " is not even" << std::endl;
-        return 2;
+        return SkinnyGemmReturnCode::N_NOT_EVEN;
     }
     if (k % WARPTILE_K != 0) {
         std::cerr << "k = " << k << " is not divisible by WARPTILE_K = " << WARPTILE_K << std::endl;
-        return 3;
+        return SkinnyGemmReturnCode::K_NOT_DIVISIBLE_BY_WARPTILE_K;
     }
 
     // Check async
     if (A_producers + B_producers + consumers > 16) {
         std::cerr << "A_producers = " << A_producers << ", B_producers = " << B_producers << ", consumers = ";
         std::cerr << consumers << " is greater than 16" << std::endl;
-        return 4;
+        return SkinnyGemmReturnCode::TOO_MANY_WARPS;
     }
     if (qsize < A_producers || qsize < (B_producers / b_lanes) || qsize < consumers) {
         std::cerr << "qsize = " << qsize << " is less than A_producers = " << A_producers;
         std::cerr << ", B_producers / b_lanes = " << B_producers / b_lanes;
         std::cerr << ", or consumers = " << consumers << std::endl;
-        return 5;
+        return SkinnyGemmReturnCode::QSIZE_TOO_SMALL;
     }
 
     // Prepare kernel launch
@@ -73,7 +78,10 @@ int skinny_gemm(
     dim3 block((A_producers + B_producers + consumers) * WARPSIZE);
 
     // Dispatch to the correct kernel
-    if (b_lanes == 0) { return ; }
+    if (b_lanes == 0) {
+        // This is a dummy if because the macro begins with an else if
+        return SkinnyGemmReturnCode::INVALID_CONFIG;
+    }
     COND_LAUCNH_ONE_SKINNY_GEMM(1, 1, 8, 2)
     COND_LAUCNH_ONE_SKINNY_GEMM(1, 1, 8, 4)
     COND_LAUCNH_ONE_SKINNY_GEMM(1, 1, 8, 8)
@@ -323,11 +331,12 @@ int skinny_gemm(
     COND_LAUCNH_ONE_SKINNY_GEMM(6, 5, 32, 2)
     COND_LAUCNH_ONE_SKINNY_GEMM(6, 6, 16, 2)
     COND_LAUCNH_ONE_SKINNY_GEMM(6, 6, 32, 2)
-    else { return 7;}
+    else {
+        return SkinnyGemmReturnCode::INVALID_CONFIG;
+    }
 
-    return 0;
+    return SkinnyGemmReturnCode::SUCCESS;
 }
-
 
 int skinny_gemm_fastpath(
     const fp8* __restrict__ A, const fp8* __restrict__ B, half* __restrict__ D, const float* scale_tensor,
@@ -352,90 +361,4 @@ int skinny_gemm_fastpath(
                 A_producers, B_producers, consumers,
                 b_lanes, qsize, op_m, ops,
                 stream);
-}
-
-int skinny_gemm_tb(
-    torch::Tensor& A,
-    torch::Tensor& B,
-    torch::Tensor& D,
-    torch::Tensor& scale_tensor,
-    int64_t split_k,
-    int64_t A_producers,
-    int64_t B_producers,
-    int64_t consumers,
-    int64_t b_lanes,
-    int64_t qsize,
-    int64_t ops
-) {
-    // Retrieve pointers
-    const fp8* __restrict__ A_ = (const fp8* __restrict__) A.data_ptr();
-    const fp8* __restrict__ B_ = (const fp8* __restrict__) B.data_ptr();
-    half* __restrict__ D_ = (half* __restrict__) D.data_ptr();
-    float* __restrict__ scale_tensor_ = (float* __restrict__) scale_tensor.data_ptr();
-
-    // Retrieve shapes
-    const int m = A.size(0);
-    const int n = B.size(1);
-    const int k = A.size(1);
-    const int b_stride = B.stride(1);
-
-    // Depending on the number of rows in A, we have different OP_M
-    int op_m;
-    if (m <= 8)       { op_m = 8;  }
-    else if (m <= 16) { op_m = 16; }
-    else              { op_m = 32; }
-
-    // Retrieve stream
-    const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
-
-    // Device guard
-    const at::cuda::OptionalCUDAGuard device_guard(device_of(A));
-
-    // Launch kernel (branched on B_LANES)
-    return skinny_gemm(
-        A_, B_, D_, scale_tensor_,
-        m, n, k, b_stride, split_k,
-        A_producers, B_producers, consumers,
-        b_lanes, qsize, op_m, ops,
-        stream
-    );
-}
-
-
-class HFRK_skinny_gemm {
-private:
-    int world_size;
-
-public:
-    HFRK_skinny_gemm(int world_size_)
-        : world_size(world_size_) {
-    }
-
-    ~HFRK_skinny_gemm() {
-    }
-
-    int skinny_gemm_torch_binding(
-        torch::Tensor& A,
-        torch::Tensor& B,
-        torch::Tensor& D,
-        torch::Tensor& scale_tensor,
-        int64_t split_k,
-        int64_t A_producers,
-        int64_t B_producers,
-        int64_t consumers,
-        int64_t b_lanes,
-        int64_t qsize,
-        int64_t ops
-    ) {
-        return skinny_gemm_tb(A, B, D, scale_tensor, split_k, A_producers, B_producers, consumers, b_lanes, qsize, ops);
-    }
-};
-
-
-#define PYBIND11_MODULE_EXPAND(NAME, MODULE) PYBIND11_MODULE(NAME, MODULE)
-
-PYBIND11_MODULE_EXPAND(TORCH_EXTENSION_NAME, m) {
-    py::class_<HFRK_skinny_gemm>(m, "HFRK_skinny_gemm")
-        .def(py::init<int>())
-        .def("skinny_gemm_torch_binding", &HFRK_skinny_gemm::skinny_gemm_torch_binding);
 }
