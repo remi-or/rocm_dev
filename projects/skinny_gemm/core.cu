@@ -5,12 +5,15 @@
 #include <hip/hip_fp8.h>
 #include <hip/hip_fp16.h>
 
-#if USE_TORCH
+// #if USE_TORCH
 #include <torch/extension.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAGuard.h>
 #include <torch/all.h>
-#endif
+
+#undef __HIP_NO_HALF_OPERATORS__
+#undef __HIP_NO_HALF_CONVERSIONS__
+// #endif
 
 using fp8 = __hip_fp8_storage_t;
 using fp8_4 = int;

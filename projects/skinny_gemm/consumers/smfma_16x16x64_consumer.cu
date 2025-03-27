@@ -142,8 +142,8 @@ void __device__ consume_tiles_sparse_16x16x64(
     // TODO: non-atomic exit path if split-k is equal to 1
     #pragma unroll
     for (int i = 0; i < B_LANES; i++) {
-        x.x = reg_D[i][0];
-        x.y = reg_D[i][1];
+        x.x = __float2half(reg_D[i][0]); // TODO: packed conversion
+        x.y = __float2half(reg_D[i][1]);
         asm volatile("global_atomic_pk_add_f16 %0, %1, off\n\t" : : "v"(&D_[i * OP_N / 2]), "v"(x));
     }
 
