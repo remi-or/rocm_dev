@@ -41,8 +41,9 @@ void __global__ _skinny_gemm_kernel(
     int p_state = (warp_id >= A_producers + B_producers);
 
     // Tiles loop
+    const int rows_of_tiles = CDIV(m, WARPTILE_M);
     const int tiles_per_row = CDIV(n, WARPTILE_N);
-    const int total_tiles = tiles_per_row * split_k;
+    const int total_tiles = rows_of_tiles * tiles_per_row * split_k;
     const int tiles_per_block = CDIV(total_tiles, CU);
 
     const int stop_tile = min(total_tiles, tiles_per_block * (blockIdx.x + 1));
@@ -50,23 +51,27 @@ void __global__ _skinny_gemm_kernel(
     for (int tile = tiles_per_block * blockIdx.x; tile < stop_tile; tile++) {
 
         // Compute tile position
-        int curr_n = (tile % tiles_per_row) * WARPTILE_N;
-        int curr_k = (tile / tiles_per_row) * WARPTILE_K * NUM_WARPTILE_K(k, split_k);
+        int idx_m = tile % rows_of_tiles;
+        int curr_m = idx_m * WARPTILE_M;
+
+        int idx_nk = tile / rows_of_tiles;
+        int curr_n = (idx_nk % tiles_per_row) * WARPTILE_N;
+        int curr_k = (idx_nk / tiles_per_row) * WARPTILE_K * NUM_WARPTILE_K(k, split_k);
 
         // Compute tile's K blocks (number of blocks along the K axis)
-        bool last_tile = (tile / tiles_per_row) == (split_k - 1);
+        bool last_tile = (idx_nk / tiles_per_row) == (split_k - 1);
         int full_tiles = (k / WARPTILE_K);
         int k_blocks = last_tile ? full_tiles - (split_k - 1) * (full_tiles / split_k) : (full_tiles / split_k);
 
         // Account for column overflow
-        int dropped_rows = max(0, 0      + WARPTILE_M - m);
+        int dropped_rows = max(0, curr_m + WARPTILE_M - m);
         int dropped_cols = max(0, curr_n + WARPTILE_N - n);
         curr_n -= dropped_cols; // make sure we are in the bounds of B
 
         // A producer warp
         if (warp_id < A_producers) {
             produce_A_tiles<B_LANES, QSIZE, OP_M, OPS>(
-                A + curr_k,
+                A  + curr_m * k + curr_k,
                 &A_buffer[0],
                 A_producers,
                 &queue[0],
@@ -92,7 +97,7 @@ void __global__ _skinny_gemm_kernel(
             consume_tiles<B_LANES, QSIZE, OP_M, OPS>(
                 &A_buffer[0],
                 &B_buffer[0],
-                D + curr_n,
+                D + curr_m * n + curr_n,
                 scale_tensor[0],
                 consumers,
                 &queue[0],

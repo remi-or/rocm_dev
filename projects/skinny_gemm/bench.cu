@@ -1,5 +1,5 @@
 #include "./../common.cuh"
-#include "./skinny_gemm.cu"
+#include "./skinny_gemm_caller.cu"
 
 #define MUL 4
 #define BATCH 4
@@ -51,7 +51,7 @@ int main(int argc, char **argv) {
         HIP_CHECK(hipEventRecord(start));
         #pragma unroll
         for (int i = 0; i < BATCH; i++) {
-            skinny_gemm_notorch(
+            skinny_gemm_fastpath(
                 dA,
                 dB + i * n * k,
                 D,

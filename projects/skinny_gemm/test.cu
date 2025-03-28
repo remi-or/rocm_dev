@@ -1,5 +1,5 @@
 #include "./../common.cuh"
-#include "./skinny_gemm.cu"
+#include "./skinny_gemm_caller.cu"
 
 #include <hip/hip_fp16.h>
 
@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
     tensor_h2d<float>(hScale_tensor, dScale_tensor, 1);
 
     HIP_CHECK( hipDeviceSynchronize() );
-    skinny_gemm_notorch(dA, dB, dD, dScale_tensor, m, n, k);
+    skinny_gemm_fastpath(dA, dB, dD, dScale_tensor, m, n, k);
     HIP_CHECK( hipDeviceSynchronize() );
 
     // Transfer result and free device tensors

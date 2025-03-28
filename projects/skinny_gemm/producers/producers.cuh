@@ -41,4 +41,5 @@ void __device__ produce_B_tiles(
     produce_n_full_tiles<B_LANES, QSIZE, OP_K, OP_N, OPS, false>(B, B_buffer, B_producers, queue, 1, index, p_state, role_id,
                                                                          0, // for B we offset the tiles to not load OOB
                                                                          b_stride, k_blocks);
+                                                                         // TODO: BENCHMARK W/ reuse for multi-row cases
 }
