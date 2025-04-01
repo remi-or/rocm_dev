@@ -1,35 +1,64 @@
-import os
 import torch
-import torch.distributed as dist
+import matplotlib.pyplot as plt
 import torch.multiprocessing as mp
 
-import mscclpp_ear
+from ear_class import EncodedAllReduce
+
+STEP = 16
 
 
-def init_process(rank: int, world_size: int, master_addr: str) -> None:
-    os.environ['MASTER_ADDR'] = master_addr
-    os.environ['MASTER_PORT'] = '29500'
-    dist.init_process_group(backend='nccl', rank=rank, world_size=world_size)
-    torch.cuda.set_device(rank)
+def generate_input(rank: int, m: int, n: int):
+    torch.manual_seed(rank)
+    return torch.randn(size=(m, n), device="cuda", dtype=torch.float16)
+
 
 def test_ear(rank: int, world_size: int, m: int, n: int):
-    try:
-        # Setup
-        init_process(rank, world_size, master_addr='127.0.0.1')
-        x = torch.ones(size=(m, n), device=f"cuda:{rank}", dtype=torch.float16)
-        # Run
-        ear_engine = mscclpp_ear.EarEngine(rank)
-        ear_engine.launchEncodedCrossReduce(x)
-        # Check results
-        expected = torch.full_like(x, world_size)
-        assert torch.allclose(x, expected), f"Rank {rank}: Expected {expected}, got {x}"
-    except Exception as e:
-        print(f"Error on rank {rank}: {str(e)}")
-        raise e
+    # Setup
+    ear = EncodedAllReduce(world_size, rank)
+    x = generate_input(rank, m, n)
+    # Run
+    ear.reduce(x)
+
+    # Display first line of all ranks
+    print(f"Rank {rank} : {x[0, :STEP].tolist()}")
+
+    # Display results for rank 0
+    # if rank == 0:
+    #     for i in range(0, n, STEP):
+    #         print(f"{i}: ", end=" | ")
+    #         for j in range(STEP):
+    #             print(f"{x[0, i + j].item():.2f}", end=" | ")
+    #         print()
+
+    # Compute expected result
+    excpected = torch.zeros_like(x)
+    for i in range(world_size):
+        excpected += generate_input(i, m, n)
+    if rank == 0:
+        print(f"Expected : {excpected[0, :STEP].tolist()}")
+
+    # Check result
+    allclose = torch.allclose(x, excpected)
+    if allclose:
+        print(f"Rank {rank} : passed allclose")
+    else:
+        delta = x.sub(excpected).abs()
+        print(f"Rank {rank} : failed allclose with {delta.max().item() = }")
+
+    # Rank 0 saves a figure of result and expected
+    if rank == 0:
+        n_sqrt = int(n ** 0.5)
+        fig, ax = plt.subplots(1, 3, figsize=(15, 3))
+        ax[0].matshow(x.reshape(n_sqrt, -1).numpy(force=True))
+        ax[1].matshow(excpected.reshape(n_sqrt, -1).numpy(force=True))
+        ax[2].matshow(delta.reshape(n_sqrt, -1).numpy(force=True))
+        cax = ax[2].matshow(delta.reshape(n_sqrt, -1).numpy(force=True))
+        plt.colorbar(cax, ax=ax[2], orientation='horizontal', pad=0.01)
+        plt.savefig(f"_ear_test.png")
 
 
 if __name__ == "__main__":
-    m = 1
+    m = 2
     n = 16384
 
     # Use all available GPUs

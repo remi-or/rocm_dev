@@ -83,22 +83,22 @@ float computeNorm(float2 regsFp[PK_ELEMS_PER_THREAD]) {
     warpReduceFloat().reduce(norm, norm, temp[0]); // input, output, temp storage
 
     // Normalize values and store them back
-    norm = sqrt(norm / (ELEMS_PER_THREAD * WARPSIZE));
+    norm = sqrt(norm / (ELEMS_PER_THREAD * WARPSIZE) + 1e-6f);
     return norm;
 }
 
 __device__ __forceinline__
-void quantizeAndStore(float2 regsFp[PK_ELEMS_PER_THREAD], fp8x2* xQuantized, float* xScales)
+void quantizeAndStore(float2 regsFloat[PK_ELEMS_PER_THREAD], fp8x2* xQuantized, float* xScales)
 {
     // Compute norm and inverse scale for faster computation
-    float norm = computeNorm(regsFp);
+    float norm = computeNorm(regsFloat);
     float invScale = 1.0f / norm;
 
     // Quantize to registers
     fp8x2 regsQ[PK_ELEMS_PER_THREAD];
     #pragma unroll
     for (int i = 0; i < PK_ELEMS_PER_THREAD; i++) {
-        regsQ[i] = __hip_cvt_float2_to_fp8x2(regsFp[i] * invScale, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
+        regsQ[i] = __hip_cvt_float2_to_fp8x2(regsFloat[i] * invScale, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
     }
 
     // Store quantized values
