@@ -44,15 +44,16 @@ def test_ear(rank: int, world_size: int, m: int, n: int):
     else:
         delta = x.sub(excpected).abs()
         print(f"Rank {rank} : failed allclose with {delta.max().item() = }")
+        print(f"Rank {rank} : failed allclose with {delta.mean().item() = }")
 
     # Rank 0 saves a figure of result and expected
     if rank == 0:
-        n_sqrt = int(n ** 0.5)
+        linewidth = 256
         fig, ax = plt.subplots(1, 3, figsize=(15, 3))
-        ax[0].matshow(x.reshape(n_sqrt, -1).numpy(force=True))
-        ax[1].matshow(excpected.reshape(n_sqrt, -1).numpy(force=True))
-        ax[2].matshow(delta.reshape(n_sqrt, -1).numpy(force=True))
-        cax = ax[2].matshow(delta.reshape(n_sqrt, -1).numpy(force=True))
+        ax[0].matshow(x.reshape(-1, linewidth).numpy(force=True))
+        ax[1].matshow(excpected.reshape(-1, linewidth).numpy(force=True))
+        ax[2].matshow(delta.reshape(-1, linewidth).numpy(force=True))
+        cax = ax[2].matshow(delta.reshape(-1, linewidth).numpy(force=True))
         plt.colorbar(cax, ax=ax[2], orientation='horizontal', pad=0.01)
         plt.savefig(f"_ear_test.png")
 

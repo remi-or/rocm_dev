@@ -56,7 +56,54 @@ using fp8x4 = __hip_fp8x4_storage_t;
 
 // ------------------------------------------- Quantization-related snippets -------------------------------------------
 __device__ __forceinline__
-float2 dequantizeFp8x2(const fp8x2 &x) {
+void computeQParams(float2 regsFp[PK_ELEMS_PER_THREAD], float2 &qParams) {
+
+    #pragma unroll
+    for (int i = 0; i < PK_ELEMS_PER_THREAD; i++) {
+        qParams.x += regsFp[i].x + regsFp[i].y;
+        qParams.y += regsFp[i].x * regsFp[i].x + regsFp[i].y * regsFp[i].y;
+    }
+
+    using warpReduceFloat = rocprim::warp_reduce<float2, WARPSIZE, true>;
+    __shared__ warpReduceFloat::storage_type temp[1];
+    warpReduceFloat().reduce(qParams, qParams, temp[0]); // input, output, temp storage
+
+    // Normalize values and store them back
+    qParams = qParams / (ELEMS_PER_THREAD * WARPSIZE);
+    qParams.y = sqrt(qParams.y + 1e-6);
+}
+
+__device__ __forceinline__
+void quantizeAndStore(float2 regsFloat[PK_ELEMS_PER_THREAD], fp8x2* xQuantized, float2* xQParams)
+{
+    // Compute norm and inverse scale for faster computation
+    float2 qParams = float2{0.0f, 0.0f};
+    computeQParams(regsFloat, qParams);
+    float invScale = 1.0f / qParams.y;
+    qParams.x = qParams.x * invScale;
+
+    // Quantize to registers
+    fp8x2 regsQ[PK_ELEMS_PER_THREAD];
+    #pragma unroll
+    for (int i = 0; i < PK_ELEMS_PER_THREAD; i++) {
+        float2 tmp = regsFloat[i] * invScale - qParams.x;
+        regsQ[i] = __hip_cvt_float2_to_fp8x2(tmp, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
+    }
+
+    // Store quantized values
+    #pragma unroll
+    for (int i = 0; i < PK_ELEMS_PER_THREAD; i++) {
+        xQuantized[i] = regsQ[i];
+    }
+
+    // Store the quantization parameters
+    if (threadIdx.x % WARPSIZE == 0) {
+        xQParams[0] = qParams;
+    }
+}
+
+__device__ __forceinline__
+float2 decompressFp8x2(const fp8x2 &x) {
     union {
         unsigned int i32val;
         fp8x2 i16val[2];
@@ -68,51 +115,12 @@ float2 dequantizeFp8x2(const fp8x2 &x) {
 }
 
 __device__ __forceinline__
-float computeNorm(float2 regsFp[PK_ELEMS_PER_THREAD]) {
-    // Compute the norm of the loaded elements
-    float norm = 0.0f;
-
-    #pragma unroll
-    for (int i = 0; i < PK_ELEMS_PER_THREAD; i++) {
-        norm += regsFp[i].x * regsFp[i].x + regsFp[i].y * regsFp[i].y;
-    }
-
-    // Use warp-reduce to compute the norm of the warp-tile
-    using warpReduceFloat = rocprim::warp_reduce<float, WARPSIZE, true>;
-    __shared__ warpReduceFloat::storage_type temp[1];
-    warpReduceFloat().reduce(norm, norm, temp[0]); // input, output, temp storage
-
-    // Normalize values and store them back
-    norm = sqrt(norm / (ELEMS_PER_THREAD * WARPSIZE) + 1e-6f);
-    return norm;
+float2 dequantizeFp8x2(const fp8x2 &x, const float2 &qParams) {
+    float2 tmp = decompressFp8x2(x);
+    tmp += qParams.x;
+    tmp *= qParams.y;
+    return tmp;
 }
-
-__device__ __forceinline__
-void quantizeAndStore(float2 regsFloat[PK_ELEMS_PER_THREAD], fp8x2* xQuantized, float* xScales)
-{
-    // Compute norm and inverse scale for faster computation
-    float norm = computeNorm(regsFloat);
-    float invScale = 1.0f / norm;
-
-    // Quantize to registers
-    fp8x2 regsQ[PK_ELEMS_PER_THREAD];
-    #pragma unroll
-    for (int i = 0; i < PK_ELEMS_PER_THREAD; i++) {
-        regsQ[i] = __hip_cvt_float2_to_fp8x2(regsFloat[i] * invScale, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
-    }
-
-    // Store quantized values
-    #pragma unroll
-    for (int i = 0; i < PK_ELEMS_PER_THREAD; i++) {
-        xQuantized[i] = regsQ[i];
-    }
-
-    // Store the quantization scale
-    if (threadIdx.x % WARPSIZE == 0) {
-        xScales[0] = norm;
-    }
-}
-
 
 
 // ---------------------------------------------------- Future work ----------------------------------------------------
@@ -137,3 +145,23 @@ float4 dequantizeAndMulF8x4(const fp8x4* x, const fp8x4* y, float scale) {
     );
     return reinterpret_cast<float4*>(out)[0];
 }
+
+
+// __device__ __forceinline__
+// void computeQParams(float2 regsFp[PK_ELEMS_PER_THREAD], float2 &qParams) {
+
+//     #pragma unroll
+//     for (int i = 0; i < PK_ELEMS_PER_THREAD; i++) {
+//         qParams.x += regsFp[i].x + regsFp[i].y;
+//         qParams.y = max(qParams.y, abs(regsFp[i].x));
+//         qParams.y = max(qParams.y, abs(regsFp[i].y));
+//     }
+
+//     using warpReduceFloat = rocprim::warp_reduce<float, WARPSIZE, true>;
+//     __shared__ warpReduceFloat::storage_type temp[2];
+//     warpReduceFloat().reduce(qParams.x, qParams.x, temp[0]); // input, output, temp storage
+//     warpReduceFloat().reduce(qParams.y, qParams.y, temp[1], rocprim::maximum<float>()); // input, output, temp storage
+
+//     // Normalize values and store them back
+//     qParams.x = qParams.x / (ELEMS_PER_THREAD * WARPSIZE);
+// }

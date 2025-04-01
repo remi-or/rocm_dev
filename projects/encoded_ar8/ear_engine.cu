@@ -76,7 +76,7 @@ private:
 
     void allocateCommsBuffers(size_t numElements) {
         const int numScales = numElements / (WARPSIZE * ELEMS_PER_THREAD);
-        const int bytesToSend = numElements + numScales * sizeof(float);
+        const int bytesToSend = numElements + numScales * sizeof(float2);
         commBufferA_ = mscclpp::GpuBuffer<uint8_t>(bytesToSend).memory();
         commBufferB_ = mscclpp::GpuBuffer<uint8_t>(bytesToSend).memory();
         commBufferSize_ = bytesToSend;

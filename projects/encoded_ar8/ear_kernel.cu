@@ -12,9 +12,9 @@ __device__ mscclpp::DeviceSyncer deviceSyncer;
 
 __device__ void crossReduceOneRound(
     const fp8x2* __restrict__ outgoingBuffer,
-    const float* __restrict__ outgoingScales,
+    const float2* __restrict__ outgoingQParams,
     fp8x2* __restrict__ incomingBuffer,
-    float* __restrict__ incomingScales,
+    float2* __restrict__ incomingQParams,
     bool outgoingBufferIsA,
     const int localRank,   // Rank of the current node, 0 <= localRank < worldSize
     const int partnerRank, // Rank of the partner node, 0 <= partnerRank < worldSize
@@ -47,7 +47,7 @@ __device__ void crossReduceOneRound(
     __syncthreads();
 
     // Dequantize, accumulate, and quantize the data
-    warpwiseInplaceDQAQ(incomingBuffer, outgoingBuffer, incomingScales, outgoingScales);
+    warpwiseInplaceDQAQ(incomingBuffer, outgoingBuffer, incomingQParams, outgoingQParams);
 
     // Wait for the partner node to have received the data
     // if (globalThreadId == 0) {
@@ -69,8 +69,8 @@ __global__ void encodedCrossReduce(
 ) {
     assert(numElements % ELEMS_PER_BLOCK == 0);
     const int numScales = numElements / (WARPSIZE * ELEMS_PER_THREAD);
-    const int bytesToSend = numElements + numScales * sizeof(float);
-    const int scalesOffset = numElements / 4; // elements are fp8 (1b) and scales are fp32 (4b)
+    const int bytesToSend = numElements + numScales * sizeof(float2);
+    const int scalesOffset = numElements / 8; // elements are fp8 (1b) and qparams are float2 (8b)
 
     // Relocate thread in tensors
     const int globalThreadId = blockIdx.x * blockDim.x + threadIdx.x;
@@ -78,12 +78,12 @@ __global__ void encodedCrossReduce(
 
     inputOutputBuffer += globalThreadId * PK_ELEMS_PER_THREAD;
     fp8x2* aQuantized = reinterpret_cast<fp8x2*>(commBufferA) + globalThreadId * PK_ELEMS_PER_THREAD;
-    float* aScales = reinterpret_cast<float*>(commBufferA) + scalesOffset + globalWarpId;
+    float2* aQParams = reinterpret_cast<float2*>(commBufferA) + scalesOffset + globalWarpId;
     fp8x2* bQuantized = reinterpret_cast<fp8x2*>(commBufferB) + globalThreadId * PK_ELEMS_PER_THREAD;
-    float* bScales = reinterpret_cast<float*>(commBufferB) + scalesOffset + globalWarpId;
+    float2* bQParams = reinterpret_cast<float2*>(commBufferB) + scalesOffset + globalWarpId;
 
     // Before communication, quantize the input buffer to commBufferA
-    warpwiseQuantize(inputOutputBuffer, aQuantized, aScales);
+    warpwiseQuantize(inputOutputBuffer, aQuantized, aQParams);
     // if (globalThreadId == 0) {
     //     printf("Rank %d, before 1st round: aQuantized[0]: %f\n", localRank, dequantizeFp8x2(aQuantized[0]).x);
     // }
@@ -93,7 +93,7 @@ __global__ void encodedCrossReduce(
     // Before: 0  1  2  3  4  5  6  7
     // After:  01 01 23 23 45 45 67 67
     int partnerRank = (localRank % 2 >= 1) ? localRank - 1 : localRank + 1;
-    crossReduceOneRound(aQuantized, aScales, bQuantized, bScales, true, localRank, partnerRank, bytesToSend);
+    crossReduceOneRound(aQuantized, aQParams, bQuantized, bQParams, true, localRank, partnerRank, bytesToSend);
     // if (globalThreadId == 0) {
     //     printf("Rank %d, after 1st round: aQuantized[0]: %f\n", localRank, dequantizeFp8x2(aQuantized[0]).x);
     // }
@@ -105,7 +105,7 @@ __global__ void encodedCrossReduce(
     // Before: 01   01   23   23   45   45   67   67
     // After:  0123 0123 0123 0123 4567 4567 4567 4567
     partnerRank = (localRank % 4 >= 2) ? localRank - 2 : localRank + 2;
-    crossReduceOneRound(bQuantized, bScales, aQuantized, aScales, false, localRank, partnerRank, bytesToSend);
+    crossReduceOneRound(bQuantized, bQParams, aQuantized, aQParams, false, localRank, partnerRank, bytesToSend);
     // if (globalThreadId == 0) {
     //     printf("Rank %d, after 2nd round: aQuantized[0]: %f\n", localRank, dequantizeFp8x2(aQuantized[0]).x);
     // }
@@ -117,7 +117,7 @@ __global__ void encodedCrossReduce(
     // Before: 0123     0123     0123     0123     4567     4567     4567     4567
     // After:  01234567 01234567 01234567 01234567 01234567 01234567 01234567 01234567
     partnerRank = (localRank + WORLD_SIZE / 2) % WORLD_SIZE;
-    crossReduceOneRound(aQuantized, aScales, bQuantized, bScales, true, localRank, partnerRank, bytesToSend);
+    crossReduceOneRound(aQuantized, aQParams, bQuantized, bQParams, true, localRank, partnerRank, bytesToSend);
     // if (globalThreadId == 0) {
     //     printf("Rank %d, after 3rd round: aQuantized[0]: %f\n", localRank, dequantizeFp8x2(aQuantized[0]).x);
     // }
@@ -125,7 +125,7 @@ __global__ void encodedCrossReduce(
     // After 3rd round, commBufferB contains the final result
 
     // Dequantize the final result to the output buffer
-    warpwiseDequantize(bQuantized, bScales, inputOutputBuffer);
+    warpwiseDequantize(bQuantized, bQParams, inputOutputBuffer);
 
     // Debug: print the current scales (can be switched between A and B)
     // if (globalThreadId == 0) {
