@@ -26,7 +26,7 @@ using uint64 = unsigned long long;
 #define CU 304
 
 // Parameters
-#define A_LANES_ 2
+#define A_LANES_ 1
 #define B_LANES_ 3
 #define QSIZE_ 3
 #define OP_M_ 16
