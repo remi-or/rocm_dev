@@ -14,7 +14,6 @@ void __device__ produce_n_full_tiles(
     fp8* buffer,
     const int producers,
     int* queue,
-    int q_stride,
     int &index,
     int &p_state,
     int &role_id,
@@ -84,7 +83,7 @@ void __device__ produce_n_full_tiles(
         load_from_gmem_to_reg_no_waitcnt<LOADS, REUSE, OP_K>(src, reg);
 
         // Wait for buffer to be consumed
-        while (queue[2 * q_stride * index] != p_state) {
+        while (queue[index] != p_state) {
             asm volatile("s_sleep 0");
         }
 
@@ -111,8 +110,14 @@ void __device__ produce_n_full_tiles(
             buf += WARPSIZE * E_PER_THREAD;
         }
 
+        // Debug: check reg00 of lane0
+        // if (lane_id == 0) {
+        //     printf("threadIdx.x: %d, blockIdx.x: %d, LANES: %d, role_id: %d, b: %d, index: %d, p_state: %d, reg[0][0]: %f\n",
+        //             threadIdx.x,     blockIdx.x,     LANES,     role_id,     b,     index,     p_state,     DB_FP8_TO_FP32(reg[0][0]));
+        // }
+
         // Mark buffer as filled
-        queue[2 * q_stride * index] = p_state + 1;
+        queue[index] = p_state + 1;
 
         // Update loop variables
         index += producers;

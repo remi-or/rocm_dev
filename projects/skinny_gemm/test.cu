@@ -58,13 +58,6 @@ int main(int argc, char **argv) {
     random_host_tensor<fp8>(hA, m * k); //full_host_tensor<fp8>(hA, m * k, 0); //
     random_host_tensor<fp8>(hB, n * k); //full_host_tensor<fp8>(hB, n * k, 0); //
 
-    // for (int i = 0; i < 1; i++) {
-    //     hA[1 * k + i] = __hip_cvt_float_to_fp8(1, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
-    // }
-    // for (int i = 0; i < k; i++) {
-    //     hB[1 * k + i] = __hip_cvt_float_to_fp8(0, __HIP_SATFINITE, __HIP_E4M3_FNUZ);
-    // }
-
     random_host_tensor<float>(hScale_tensor, 1);
     // hScale_tensor[0] = 1;
     host_skinny_gemm<OUTD>(hA, hB, host_ref, hScale_tensor, m, n, k);
@@ -104,7 +97,9 @@ int main(int argc, char **argv) {
         // std::cout << k / n << "," << k % n << ":" << delta << ", ";
         // std::cout << k << ":" << delta << ", ";
     }
-    std::cout << "{\"max_delta\": " << max_delta << ", \"total_delta\": " << sum_delta << "}";
+    std::cout << "{\"max_delta\": " << max_delta;
+    std::cout << ", \"total_delta\": " << sum_delta;
+    std::cout << ", \"mean_delta\": " << sum_delta / (m * n) << "}";
 
     // Free host-side tensors
     free(hA);

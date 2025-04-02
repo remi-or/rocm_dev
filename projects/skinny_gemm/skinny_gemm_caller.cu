@@ -1,8 +1,8 @@
 #include "./skinny_gemm_kernel.cu"
 
-#define COND_LAUCNH_ONE_SKINNY_GEMM(__bl, __qs, __om, __ops)                                         \
-    else if (b_lanes == __bl && qsize == __qs && op_m == __om && ops == __ops) {                     \
-        _skinny_gemm_kernel<__bl, __qs, __om, __ops><<<grid, block, 0, stream>>>(                    \
+#define COND_LAUCNH_ONE_SKINNY_GEMM(__al, __bl, __qs, __om, __ops)                                         \
+    else if (a_lanes == __al && b_lanes == __bl && qsize == __qs && op_m == __om && ops == __ops) {                     \
+        _skinny_gemm_kernel<__al, __bl, __qs, __om, __ops><<<grid, block, 0, stream>>>(                    \
             A, B, D, scale_tensor, m, n, k, b_stride, split_k, A_producers, B_producers, consumers); \
     }
 
@@ -351,6 +351,7 @@ int skinny_gemm_fastpath(
     int B_producers = B_PRODUCERS_;
     int consumers = CONSUMERS_;
 
+    int a_lanes = A_LANES_;
     int b_lanes = B_LANES_;
     int qsize = QSIZE_;
     int op_m = OP_M_;
@@ -380,7 +381,7 @@ int skinny_gemm_fastpath(
         std::cerr << consumers << " is greater than 16" << std::endl;
         return SkinnyGemmReturnCode::TOO_MANY_WARPS;
     }
-    if (qsize < A_producers || qsize < (B_producers / b_lanes) || qsize < consumers) {
+    if (qsize < (A_producers / a_lanes) || qsize < (B_producers / b_lanes) || qsize < consumers) {
         std::cerr << "qsize = " << qsize << " is less than A_producers = " << A_producers;
         std::cerr << ", B_producers / b_lanes = " << B_producers / b_lanes;
         std::cerr << ", or consumers = " << consumers << std::endl;
@@ -396,7 +397,7 @@ int skinny_gemm_fastpath(
         // This is a dummy if because the macro begins with an else if
         return SkinnyGemmReturnCode::INVALID_CONFIG;
     }
-    COND_LAUCNH_ONE_SKINNY_GEMM(B_LANES_, QSIZE_, OP_M_, OPS_)
+    COND_LAUCNH_ONE_SKINNY_GEMM(A_LANES_, B_LANES_, QSIZE_, OP_M_, OPS_)
     else {
         return SkinnyGemmReturnCode::INVALID_CONFIG;
     }

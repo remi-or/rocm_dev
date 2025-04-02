@@ -3,7 +3,7 @@
 
 // TODO: try uint16 for the p state
 
-template<int B_LANES, int QSIZE, int OP_M, int OPS>
+template<int A_LANES, int B_LANES, int QSIZE, int OP_M, int OPS>
 void __global__ _skinny_gemm_kernel(
     const fp8* __restrict__ A,
     const fp8* __restrict__ B,
@@ -19,13 +19,13 @@ void __global__ _skinny_gemm_kernel(
     const int consumers
 ) {
     // Compile-time constants
-    static constexpr int WARPTILE_M = OP_M; // is either 8, 16 or 32
+    static constexpr int WARPTILE_M = OP_M * A_LANES; // is either 8, 16 or 32
     static constexpr int WARPTILE_N = (OP_M == 32 ? 32 : 16) * B_LANES;
     static constexpr int WARPTILE_K = (512 / OP_M) * OPS;
 
     // Initialize shared queue
-    __shared__ int queue[2 * B_LANES * QSIZE];
-    if (threadIdx.x < 2 * B_LANES * QSIZE) {
+    __shared__ int queue[(A_LANES + B_LANES) * QSIZE];
+    if (threadIdx.x < (A_LANES + B_LANES) * QSIZE) {
         queue[threadIdx.x] = 0;
     }
     // Declare shared buffer
@@ -70,7 +70,7 @@ void __global__ _skinny_gemm_kernel(
 
         // A producer warp
         if (warp_id < A_producers) {
-            produce_A_tiles<B_LANES, QSIZE, OP_M, OPS>(
+            produce_A_tiles<A_LANES, QSIZE, OP_M, OPS>(
                 A  + curr_m * k + curr_k,
                 &A_buffer[0],
                 A_producers,
@@ -87,14 +87,14 @@ void __global__ _skinny_gemm_kernel(
                 B + curr_n * b_stride + curr_k,
                 &B_buffer[0],
                 B_producers,
-                &queue[1],
+                &queue[A_LANES * QSIZE],
                 index, p_state, role_id,
                 b_stride, k_blocks
             );
         }
         // Consumers warp
         else if (warp_id < A_producers + B_producers + consumers) {
-            consume_tiles<B_LANES, QSIZE, OP_M, OPS>(
+            consume_tiles<A_LANES, B_LANES, QSIZE, OP_M, OPS>(
                 &A_buffer[0],
                 &B_buffer[0],
                 D + curr_m * n + curr_n,

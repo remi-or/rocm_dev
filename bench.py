@@ -25,6 +25,7 @@ if __name__ == "__main__":
     # Compile and run test
     max_deltas = [] if test_runs > 0 else [-1]
     sum_deltas = [] if test_runs > 0 else [-1]
+    mean_deltas = [] if test_runs > 0 else [-1]
     for i in range(test_runs):
         # Run the test (after compiling if this is the first time)
         if i == 0:
@@ -37,6 +38,7 @@ if __name__ == "__main__":
             parsed = json.loads(test_output)
             max_deltas.append(float(parsed["max_delta"]))
             sum_deltas.append(float(parsed["total_delta"]))
+            mean_deltas.append(float(parsed["mean_delta"]))
         except:
             print(test_output.replace("\\n", "\n"))
             raise Exception("Failed to parse the output")
@@ -62,6 +64,7 @@ if __name__ == "__main__":
         "message": message,
         "max_deltas": f"{max(max_deltas):.4f} <- [" + ", ".join(map(lambda x: f"{x:.4f}", max_deltas)) + "]",
         "sum_deltas": f"{max(sum_deltas):.4f} <- [" + ", ".join(map(lambda x: f"{x:.4f}", sum_deltas)) + "]",
+        "mean_deltas": f"{max(mean_deltas):.4f} <- [" + ", ".join(map(lambda x: f"{x:.4f}", mean_deltas)) + "]",
     }
     print(json.dumps(data, indent=4))
 
