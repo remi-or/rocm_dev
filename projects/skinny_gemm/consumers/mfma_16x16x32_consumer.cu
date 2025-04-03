@@ -74,6 +74,7 @@ void __device__ consume_tiles_dense_16x16x32(
                 consumer_smem_to_reg(A_offs_buff + (a_lane * OP_M * WARPTILE_K) + (op * OP_M * OP_K), reg_A[op]);
             }
             // Mark A buffer as consumed
+            asm volatile("s_waitcnt lgkmcnt(0)");
             a_queue[A_LANES * index + a_lane] = p_state + 1;
 
             // Go through each B lanes
@@ -93,6 +94,7 @@ void __device__ consume_tiles_dense_16x16x32(
                 }
                 // If last A_lane, mark B buffer as consumed
                 if (a_lane == A_LANES - 1) {
+                    asm volatile("s_waitcnt lgkmcnt(0)");
                     b_queue[B_LANES * index + b_lane] = p_state + 1;
                 }
 

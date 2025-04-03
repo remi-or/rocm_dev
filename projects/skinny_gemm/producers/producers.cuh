@@ -19,7 +19,7 @@ void __device__ produce_A_tiles(
     //                                                       k_blocks);
     // } else {
         static constexpr int OP_K = (32 * 16) / OP_M;
-        produce_n_full_tiles<A_LANES, QSIZE, OP_K, OP_M, OPS, false>(A, A_buffer, A_producers, A_queue, index, p_state,
+        produce_n_full_tiles<A_LANES, QSIZE, OP_K, OP_M, OPS, true>(A, A_buffer, A_producers, A_queue, index, p_state,
                                                                       role_id, dropped_rows, k, k_blocks);
     // }
 }

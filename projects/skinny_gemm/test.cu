@@ -94,7 +94,7 @@ int main(int argc, char **argv) {
         // std::cout << (float) host_ref[k] << ":" << (float) host_result[k] << ", ";
         // std::cout << k / n << "," << k % n << ":" << (float) host_result[k] << ", ";
         // std::cout << k << ":" << (float) host_result[k] << ", ";
-        std::cout << k / n << "," << k % n << ":" << delta << ", ";
+        // std::cout << k / n << "," << k % n << ":" << delta << ", ";
         // std::cout << k << ":" << delta << ", ";
     }
     std::cout << "{\"max_delta\": " << max_delta;
