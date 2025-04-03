@@ -52,19 +52,21 @@ void __device__ consume_tiles_dense_16x16x32(
     }
 
     // K-wise loop
-    int* b_queue = a_queue + A_LANES * QSIZE;
     int b = role_id;
+    int* b_queue = a_queue + A_LANES * QSIZE;
+
     while (b < k_blocks) {
+
         // Account for cyclic queue
         index -= (index >= QSIZE) ? QSIZE : 0;
         fp8* A_offs_buff = A_buffer + index * (WARPTILE_M * WARPTILE_K);
         fp8* B_offs_buff = B_buffer + index * (WARPTILE_N * WARPTILE_K);
 
-        // Go through all b lanes
+        // Go through all B lanes
         #pragma unroll
         for (int b_lane = 0; b_lane < B_LANES; b_lane++) {
 
-            // If first A_lane, wait for B buffer to be filled
+            // Wait for B buffer to be filled
             while (b_queue[B_LANES * index + b_lane] != p_state) {
                 asm volatile("s_sleep 0");
             }
@@ -81,7 +83,7 @@ void __device__ consume_tiles_dense_16x16x32(
             #pragma unroll
             for (int a_lane = 0; a_lane < A_LANES; a_lane++) {
 
-                // Wait for A buffer to be filled if this is the first b lane
+                // If this is the first B lane, fill A registers
                 if (b_lane == 0) {
                     // Wait for A buffer to be filled
                     while (a_queue[A_LANES * index + a_lane] != p_state) {
@@ -122,7 +124,6 @@ void __device__ consume_tiles_dense_16x16x32(
 
     // Infer the current column in D
     int out_n = 2 * ((lane_id % 16) / 2);
-
 
     // Prepare swapping variables
     int id_to_swap = 1 - lane_id % 2;
@@ -165,7 +166,7 @@ void __device__ consume_tiles_dense_16x16x32(
             __half2 x;
             #pragma unroll
             for (int b_lane = 0; b_lane < B_LANES; b_lane++) {
-                x.x = __float2half(reg_D[a_lane][b_lane][2 * row]);
+                x.x = __float2half(reg_D[a_lane][b_lane][2 * row]); // TODO: packed conversion
                 x.y = __float2half(reg_D[a_lane][b_lane][2 * row + 1]);
                 asm volatile("global_atomic_pk_add_f16 %0, %1, off\n\t" : : "v"(&D_packed[b_lane * (OP_N / 2)]), "v"(x));
             }

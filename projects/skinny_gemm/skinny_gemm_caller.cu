@@ -16,7 +16,7 @@ enum SkinnyGemmReturnCode {
     INVALID_CONFIG = 6
 };
 
-#define SKINNY_GEMM_FULL_COMPILE
+// #define SKINNY_GEMM_FULL_COMPILE
 #ifdef SKINNY_GEMM_FULL_COMPILE
 int skinny_gemm(
 // Tensors

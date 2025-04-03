@@ -1,7 +1,8 @@
 #include "./../core.cu"
 
 // WARNING / TODO : tiles always hit cache AND are swizzled
-template<int B_LANES, int QSIZE, int OPS>
+// TODO : add support for LANES > 1
+template<int LANES, int QSIZE, int OPS>
 void __device__ produce_4_half_tiles(
     const fp8* __restrict__ src,
     fp8* buffer,
@@ -20,8 +21,7 @@ void __device__ produce_4_half_tiles(
     static constexpr int OP_M = 8;
     static constexpr int OP_N = 16;
     static constexpr int OP_K = 64;
-    static constexpr int WARPTILE_M = OP_M;
-    static constexpr int WARPTILE_N = OP_N * B_LANES;
+    static constexpr int WARPTILE_M = OP_M * LANES;
     static constexpr int WARPTILE_K = OP_K * OPS;
 
     static constexpr int THREADS_PER_LD = 8;
@@ -52,11 +52,11 @@ void __device__ produce_4_half_tiles(
     fp8_4* buf;
     int b = (OPS == 1 ? 2 : 1) * role_id;
 
-    while (b < k_blocks) {
+    while (b < LANES * k_blocks) {
 
         // Account for cyclic queue
-        index -= (index >= QSIZE) ? QSIZE : 0;
-        buf = reinterpret_cast<fp8_4*>(buffer) + index * (WARPTILE_M * WARPTILE_K / 4);
+        index -= (index >= LANES * QSIZE) ? QSIZE : 0;
+        buf = reinterpret_cast<fp8_4*>(buffer) + index * (OP_M * WARPTILE_K / 4);
 
         // Load from gmem to reg
         asm volatile(
@@ -67,7 +67,7 @@ void __device__ produce_4_half_tiles(
         );
 
         // Wait for buffer to be consumed
-        while (queue[2 * B_LANES * index] != p_state) {
+        while (queue[index] != p_state) {
             asm volatile("s_sleep 0");
         }
 
@@ -110,7 +110,7 @@ void __device__ produce_4_half_tiles(
         }
 
         // Mark buffer as filled
-        queue[2 * B_LANES * index] = p_state + 1;
+        queue[index] = p_state + 1;
 
         // Advance
         src += WARPTILE_K * producers;

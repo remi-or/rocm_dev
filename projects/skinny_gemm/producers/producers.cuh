@@ -14,14 +14,14 @@ void __device__ produce_A_tiles(
     const int k_blocks,
     int dropped_rows // number of rows that are out of bounds for this producer
 ) {
-    // if constexpr (OP_M == 8) {
-    //     produce_4_half_tiles<B_LANES, QSIZE, OPS>(A, A_buffer, A_producers, queue, index, p_state, role_id, dropped_rows, k,
-    //                                                       k_blocks);
-    // } else {
+    if constexpr (OP_M == 8) {
+        produce_4_half_tiles<A_LANES, QSIZE, OPS>(A, A_buffer, A_producers, A_queue, index, p_state, role_id,
+                                                  dropped_rows, k, k_blocks);
+    } else {
         static constexpr int OP_K = (32 * 16) / OP_M;
         produce_n_full_tiles<A_LANES, QSIZE, OP_K, OP_M, OPS, true>(A, A_buffer, A_producers, A_queue, index, p_state,
                                                                       role_id, dropped_rows, k, k_blocks);
-    // }
+    }
 }
 
 template<int B_LANES, int QSIZE, int OP_M, int OPS>
