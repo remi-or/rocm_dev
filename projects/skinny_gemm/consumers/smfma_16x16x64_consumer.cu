@@ -1,4 +1,4 @@
-template<int B_LANES, int QSIZE, int OPS>
+template<int A_LANES, int B_LANES, int QSIZE, int OPS> // TODO: A_LANES is not used
 void __device__ consume_tiles_sparse_16x16x64(
     fp8* A_buffer,
     fp8* B_buffer,

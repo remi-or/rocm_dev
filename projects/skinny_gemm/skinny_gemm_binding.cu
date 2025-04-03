@@ -22,8 +22,10 @@ int skinny_gemm_tb(
     int64_t A_producers,
     int64_t B_producers,
     int64_t consumers,
+    int64_t a_lanes,
     int64_t b_lanes,
     int64_t qsize,
+    int64_t op_m,
     int64_t ops
 ) {
     // Retrieve pointers
@@ -38,11 +40,7 @@ int skinny_gemm_tb(
     const int k = A.size(1);
     const int b_stride = B.stride(1);
 
-    // Depending on the number of rows in A, we have different OP_M
-    int op_m;
-    if (m <= 8)       { op_m = 8;  }
-    else if (m <= 16) { op_m = 16; }
-    else              { op_m = 32; }
+    // TODO: Depending on the number of rows in A, we have different OP_M and A_LANES
 
     // Retrieve stream
     const cudaStream_t stream = at::cuda::getCurrentCUDAStream();
@@ -55,7 +53,7 @@ int skinny_gemm_tb(
         A_, B_, D_, scale_tensor_,
         m, n, k, b_stride, split_k,
         A_producers, B_producers, consumers,
-        b_lanes, qsize, op_m, ops,
+        a_lanes, b_lanes, qsize, op_m, ops,
         stream
     );
 }
@@ -82,11 +80,18 @@ public:
         int64_t A_producers,
         int64_t B_producers,
         int64_t consumers,
+        int64_t a_lanes,
         int64_t b_lanes,
         int64_t qsize,
+        int64_t op_m,
         int64_t ops
     ) {
-        return skinny_gemm_tb(A, B, D, scale_tensor, split_k, A_producers, B_producers, consumers, b_lanes, qsize, ops);
+        return skinny_gemm_tb(
+            A, B, D, scale_tensor,
+            split_k,
+            A_producers, B_producers, consumers,
+            a_lanes, b_lanes, qsize, op_m, ops
+        );
     }
 };
 

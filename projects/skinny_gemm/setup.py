@@ -21,7 +21,9 @@ setup(
 
 root = os.path.dirname(os.path.abspath(__file__))
 
-for file in glob.glob(os.path.join(root, "*.hip")):
+files_to_remove = glob.glob(os.path.join(root, "*.hip"))
+files_to_remove += glob.glob(os.path.join(root, "*_hip.cuh"))
+for file in files_to_remove:
     os.remove(file)
 
 shutil.rmtree(os.path.join(root, "build"))

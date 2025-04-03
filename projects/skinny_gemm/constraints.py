@@ -4,6 +4,7 @@ SIZEOF = {
 }
 
 def fits_in_gemm(
+    a_lanes: int,
     b_lanes: int,
     qsize: int,
     op_m: int,
@@ -19,7 +20,7 @@ def fits_in_gemm(
         print(f"For {op_m = }, we got {op_n = } and {op_k = }")
 
     # Infer helper variables
-    warptile_m = op_m
+    warptile_m = a_lanes * op_m
     warptile_n = b_lanes * op_n
     warptile_k = op_k * ops
 
@@ -38,14 +39,11 @@ def fits_in_gemm(
 
 if __name__ == "__main__":
 
-    first_if = True
+    for a_lanes in [1, 2, 3, 4, 5, 6]:
+        for b_lanes in [1, 2, 3, 4, 5, 6]:
+            for qsize in [1, 2, 3, 4, 5, 6]:
+                for op_m in [8, 16, 32]:
+                    for ops in [2, 4, 8]:
 
-    for b_lanes in [1, 2, 3, 4, 5, 6]:
-        for qsize in [1, 2, 3, 4, 5, 6]:
-            for op_m in [8, 16, 32]:
-                for ops in [2, 4, 8]:
-
-                    if fits_in_gemm(b_lanes, qsize, op_m, ops, verbose=False):
-                        branch_type = "if" if first_if else "else if"
-                        first_if = False
-                        print(f"{branch_type} COND_LAUCNH_ONE_SKINNY_GEMM({b_lanes}, {qsize}, {op_m}, {ops});")
+                        if fits_in_gemm(a_lanes, b_lanes, qsize, op_m, ops, verbose=False):
+                            print(f"COND_LAUCNH_ONE_SKINNY_GEMM({a_lanes}, {b_lanes}, {qsize}, {op_m}, {ops})")
