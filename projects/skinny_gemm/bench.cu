@@ -1,8 +1,8 @@
 #include "./../common.cuh"
 #include "./skinny_gemm_caller.cu"
 
-#define MUL 4
-#define BATCH 4
+#define MUL 10
+#define BATCH 5
 #define OUTD half
 
 int main(int argc, char **argv) {

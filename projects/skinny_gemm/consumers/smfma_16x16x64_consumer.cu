@@ -63,6 +63,23 @@ void __device__ consume_tiles_sparse_16x16x64(
         fp8* A_offs_buff = A_buffer + index * (WARPTILE_M * WARPTILE_K);
         fp8* B_offs_buff = B_buffer + index * (WARPTILE_N * WARPTILE_K);
 
+        // Load A registers
+        #pragma unroll
+        for (int a_lane = 0; a_lane < A_LANES; a_lane++) {
+            // Wait for A buffer to be filled
+            while (a_queue[A_LANES * index + a_lane] != p_state) {
+                asm volatile("s_sleep 0");
+            }
+            // Load A buffer
+            #pragma unroll
+            for (int op = 0; op < OPS; op++) {
+                consumer_smem_to_reg(A_offs_buff + (a_lane * OP_M * WARPTILE_K) + (op * OP_M * OP_K), reg_A[a_lane][op]);
+            }
+            // Mark A buffer as consumed
+            // DEBUG: disabled this because not needed in practice // asm volatile("s_waitcnt lgkmcnt(0)");
+            a_queue[A_LANES * index + a_lane] = p_state + 1;
+        }
+
         // Go through all B lanes
         #pragma unroll
         for (int b_lane = 0; b_lane < B_LANES; b_lane++) {
@@ -77,28 +94,12 @@ void __device__ consume_tiles_sparse_16x16x64(
                 consumer_smem_to_reg(B_offs_buff + (b_lane * OP_N * WARPTILE_K) + (op * OP_N * OP_K), reg_B[op]);
             }
             // Mark B buffer as consumed
-            asm volatile("s_waitcnt lgkmcnt(0)");
+            // DEBUG: disabled this because not needed in practice // asm volatile("s_waitcnt lgkmcnt(0)");
             b_queue[B_LANES * index + b_lane] = p_state + 1;
 
             // Go through all A lanes
             #pragma unroll
             for (int a_lane = 0; a_lane < A_LANES; a_lane++) {
-
-                // If this is the first B lane, load A registers
-                if (b_lane == 0) {
-                    // Wait for A buffer to be filled
-                    while (a_queue[A_LANES * index + a_lane] != p_state) {
-                        asm volatile("s_sleep 0");
-                    }
-                    // Load A buffer
-                    #pragma unroll
-                    for (int op = 0; op < OPS; op++) {
-                        consumer_smem_to_reg(A_offs_buff + (a_lane * OP_M * WARPTILE_K) + (op * OP_M * OP_K), reg_A[a_lane][op]);
-                    }
-                    // Mark A buffer as consumed
-                    asm volatile("s_waitcnt lgkmcnt(0)");
-                    a_queue[A_LANES * index + a_lane] = p_state + 1;
-                }
 
                 // Consume registers
                 #pragma unroll
