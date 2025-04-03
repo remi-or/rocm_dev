@@ -1,6 +1,6 @@
 import argparse
 import torch
-import matplotlib.pyplot as plt
+import matplotlib
 
 from class_project import Project
 
@@ -30,22 +30,24 @@ if __name__ == "__main__":
     m, n, k = list(map(int, arguments.split(" ")))
     deltas = deltas.reshape(m, n)
 
-    warpsize_n = 8 * 48
-    truncated_n = (n // warpsize_n) * warpsize_n
-    deltas = deltas[:, :truncated_n].reshape(-1, warpsize_n)
+    matplotlib.image.imsave('skg_deltas.png', deltas.numpy(force=True))
 
-    fig, ax = plt.subplots()
-    cax = ax.matshow(deltas.numpy(force=True), cmap='viridis')
+    # fig, ax = plt.subplots()
+    # cax = ax.pcolormesh(
+    #     torch.arange(m).numpy(force=True),
+    #     torch.arange(n).numpy(force=True),
+    #     deltas.numpy(force=True),
+    # )
 
-    plt.colorbar(cax)
-    ax.set_xlabel(f"{warpsize_n}-folded m")
-    ax.set_ylabel(f"{warpsize_n}-folded n")
-    ax.set_title('Deltas Heatmap')
+    # # plt.colorbar(cax)
+    # # ax.set_xlabel("m")
+    # # ax.set_ylabel("n")
+    # # ax.set_title('Deltas Heatmap')
 
-    ax.set_xticks(list(range(0, warpsize_n, 16)))
+    # # ax.set_xticks(list(range(0, n, 16)))
 
-    plt.savefig('deltas_heatmap.png')
-    # print(deltas)
+    # plt.savefig('deltas_heatmap.png')
+    # # print(deltas)
 
 
 """

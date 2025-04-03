@@ -35,7 +35,7 @@ void __device__ consume_tiles_dense_16x16x32(
     B_buffer += (lane_id % 32 >= 16) ? NB_BANKS * E_PER_BANK * 2 : 0;
 
     // Declare input registers
-    fp8x8 reg_A[OPS];
+    fp8x8 reg_A[A_LANES][OPS];
     fp8x8 reg_B[OPS];
 
     // Initialize output registers
@@ -60,49 +60,48 @@ void __device__ consume_tiles_dense_16x16x32(
         fp8* A_offs_buff = A_buffer + index * (WARPTILE_M * WARPTILE_K);
         fp8* B_offs_buff = B_buffer + index * (WARPTILE_N * WARPTILE_K);
 
-        // Go through all A lanes
+        // Go through all b lanes
         #pragma unroll
-        for (int a_lane = 0; a_lane < A_LANES; a_lane++) {
+        for (int b_lane = 0; b_lane < B_LANES; b_lane++) {
 
-            // Wait for A buffer to be filled
-            while (a_queue[A_LANES * index + a_lane] != p_state) {
+            // If first A_lane, wait for B buffer to be filled
+            while (b_queue[B_LANES * index + b_lane] != p_state) {
                 asm volatile("s_sleep 0");
             }
-            // Load A buffer
+            // Load B buffer
             #pragma unroll
             for (int op = 0; op < OPS; op++) {
-                consumer_smem_to_reg(A_offs_buff + (a_lane * OP_M * WARPTILE_K) + (op * OP_M * OP_K), reg_A[op]);
+                consumer_smem_to_reg(B_offs_buff + (b_lane * OP_N * WARPTILE_K) + (op * OP_N * OP_K), reg_B[op]);
             }
-            // Mark A buffer as consumed
+            // Mark B buffer as consumed
             asm volatile("s_waitcnt lgkmcnt(0)");
-            a_queue[A_LANES * index + a_lane] = p_state + 1;
+            b_queue[B_LANES * index + b_lane] = p_state + 1;
 
-            // Go through each B lanes
+            // Go through all a lanes
             #pragma unroll
-            for (int b_lane = 0; b_lane < B_LANES; b_lane++) {
+            for (int a_lane = 0; a_lane < A_LANES; a_lane++) {
 
-                // If first A_lane, wait for B buffer to be filled
-                if (a_lane == 0) {
-                    while (b_queue[B_LANES * index + b_lane] != p_state) {
+                // Wait for A buffer to be filled if this is the first b lane
+                if (b_lane == 0) {
+                    // Wait for A buffer to be filled
+                    while (a_queue[A_LANES * index + a_lane] != p_state) {
                         asm volatile("s_sleep 0");
                     }
-                }
-                // Load B buffer
-                #pragma unroll
-                for (int op = 0; op < OPS; op++) {
-                    consumer_smem_to_reg(B_offs_buff + (b_lane * OP_N * WARPTILE_K) + (op * OP_N * OP_K), reg_B[op]);
-                }
-                // If last A_lane, mark B buffer as consumed
-                if (a_lane == A_LANES - 1) {
+                     // Load A buffer
+                    #pragma unroll
+                    for (int op = 0; op < OPS; op++) {
+                        consumer_smem_to_reg(A_offs_buff + (a_lane * OP_M * WARPTILE_K) + (op * OP_M * OP_K), reg_A[a_lane][op]);
+                    }
+                    // Mark A buffer as consumed
                     asm volatile("s_waitcnt lgkmcnt(0)");
-                    b_queue[B_LANES * index + b_lane] = p_state + 1;
+                    a_queue[A_LANES * index + a_lane] = p_state + 1;
                 }
 
                 // Consume registers
                 #pragma unroll
                 for (int op = 0; op < OPS; op++) {
                     reg_D[a_lane][b_lane] = __builtin_amdgcn_mfma_f32_16x16x32_fp8_fp8(
-                        reinterpret_cast<long>(reg_A[op]),
+                        reinterpret_cast<long>(reg_A[a_lane][op]),
                         reinterpret_cast<long>(reg_B[op]),
                         reg_D[a_lane][b_lane],
                         0, // src2
@@ -112,14 +111,6 @@ void __device__ consume_tiles_dense_16x16x32(
                 }
             }
         }
-
-
-        // // Debug: check reg00 of lane0
-        // if (lane_id == 0) {
-        //     printf("threadIdx.x: %d, blockIdx.x: %d, b: %d, index: %d, p_state: %d, regA[0]: %f,           regB[0]: %f, regD[1][0]: %f\n",
-        //             threadIdx.x,     blockIdx.x,     b,     index,     p_state,     DB8TO32(reg_A[0][0]),     DB8TO32(reg_B[0][0]),     reg_D[1][0][0]);
-        // }
-
         // Update index
         index += consumers;
         p_state = (index >= QSIZE) ? (p_state + 2) : p_state;
@@ -132,57 +123,55 @@ void __device__ consume_tiles_dense_16x16x32(
     // Infer the current column in D
     int out_n = 2 * ((lane_id % 16) / 2);
 
+
+    // Prepare swapping variables
+    int id_to_swap = 1 - lane_id % 2;
+    int src_lane = lane_id + 1 - 2 * (lane_id % 2);
+
+    // Loop over all a lanes
     #pragma unroll
     for (int a_lane = 0; a_lane < A_LANES; a_lane++) {
 
-        // Finalize registers so that each threads hold 2 consecutive results in memory
-        float final_scale;
-        int id_to_swap = 1 - lane_id % 2;
-        int src_lane = lane_id + 1 - 2 * (lane_id % 2);
-
+        // Loop over all b lanes
         #pragma unroll
-        for (int i = 0; i < B_LANES; i++) {
+        for (int b_lane = 0; b_lane < B_LANES; b_lane++) {
 
             // Scaling
-            final_scale = (out_n + i * OP_N) >= dropped_cols ? scale : 0.0f;
-            reg_D[a_lane][i][0] *= final_scale;
-            reg_D[a_lane][i][1] *= final_scale;
-            reg_D[a_lane][i][2] *= final_scale;
-            reg_D[a_lane][i][3] *= final_scale;
+            float final_scale = (out_n + b_lane * OP_N) >= dropped_cols ? scale : 0.0f;
+            #pragma unroll
+            for (int j = 0; j < 4; j++) {
+                reg_D[a_lane][b_lane][j] *= final_scale;
+            }
 
             // Swapping
-            reg_D[a_lane][i][id_to_swap    ] = __shfl(reg_D[a_lane][i][id_to_swap    ], src_lane);
-            reg_D[a_lane][i][id_to_swap + 2] = __shfl(reg_D[a_lane][i][id_to_swap + 2], src_lane);
+            #pragma unroll
+            for (int j = 0; j < 4; j+=2) {
+                reg_D[a_lane][b_lane][id_to_swap + j] = __shfl(reg_D[a_lane][b_lane][id_to_swap + j], src_lane);
+            }
         }
 
-        // Infer the current row in D
-        int out_m = a_lane * OP_M + (lane_id / 16) * 4 + (lane_id % 2);
+        // Infer the starting row in D
+        int out_m0 = a_lane * OP_M + (lane_id / 16) * 4 + (lane_id % 2);
+        __half2* D_packed = reinterpret_cast<__half2*>(D + (out_m0 * n + out_n));
 
-        // Quit if we are in dropped rows territory
-        if (out_m + dropped_rows >= WARPTILE_M) { return; }
-        // Relocate on D
-        __half2* D_ = reinterpret_cast<__half2*>(D + (out_m * n + out_n));
-
-        // Out lane by lane for the first exit row
-        __half2 x;
+        // Loop over all rows
         #pragma unroll
-        for (int b_lane = 0; b_lane < B_LANES; b_lane++) {
-            x.x = __float2half(reg_D[a_lane][b_lane][0]);
-            x.y = __float2half(reg_D[a_lane][b_lane][1]);
-            asm volatile("global_atomic_pk_add_f16 %0, %1, off\n\t" : : "v"(&D_[b_lane * (OP_N / 2)]), "v"(x));
-        }
+        for (int row = 0; row < 2; row++) {
 
-        // Quit if the second exit row is in dropped rows territory
-        if (out_m + 2 + dropped_rows >= WARPTILE_M) { return; }
-        // Advance to the second exit row (which is two rows after the first one)
-        D_ += n;
+            // Quit if we are in dropped rows territory
+            if (out_m0 + dropped_rows >= WARPTILE_M - 2 * row) { return; }
 
-        // Out lane by lane for the second exit row
-        #pragma unroll
-        for (int b_lane = 0; b_lane < B_LANES; b_lane++) {
-            x.x = __float2half(reg_D[a_lane][b_lane][2]);
-            x.y = __float2half(reg_D[a_lane][b_lane][3]);
-            asm volatile("global_atomic_pk_add_f16 %0, %1, off\n\t" : : "v"(&D_[b_lane * (OP_N / 2)]), "v"(x));
+            // Out lane by lane
+            __half2 x;
+            #pragma unroll
+            for (int b_lane = 0; b_lane < B_LANES; b_lane++) {
+                x.x = __float2half(reg_D[a_lane][b_lane][2 * row]);
+                x.y = __float2half(reg_D[a_lane][b_lane][2 * row + 1]);
+                asm volatile("global_atomic_pk_add_f16 %0, %1, off\n\t" : : "v"(&D_packed[b_lane * (OP_N / 2)]), "v"(x));
+            }
+
+            // Advance two rows (one in packed)
+            D_packed += n;
         }
     }
 
@@ -215,18 +204,3 @@ void __device__ consume_tiles_dense_16x16x32(
     //     printf("\n");
     // }
 }
-
-
-
-// TODO: non-atomic exit path if split-k is equal to 1
-
-// Disabled: if D is of type float
-// // Relocate on D
-// D += (out_m * n + out_n);
-
-// // Out lane by lane
-// #pragma unroll
-// for (int i = 0; i < B_LANES; i++) {
-//     atomicAdd(&D[0 + i*OP_N], reg_D[i][0]);
-//     atomicAdd(&D[1 + i*OP_N], reg_D[i][1]);
-// }
