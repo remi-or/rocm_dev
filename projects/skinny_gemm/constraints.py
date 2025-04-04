@@ -39,11 +39,14 @@ def fits_in_gemm(
 
 if __name__ == "__main__":
 
-    for a_lanes in [1, 2, 3, 4, 5, 6]:
+    for a_lanes in [1, 2, 3, 4]:
         for b_lanes in [1, 2, 3, 4, 5, 6]:
             for qsize in [1, 2, 3, 4, 5, 6]:
                 for op_m in [8, 16, 32]:
-                    for ops in [2, 4, 8]:
+                    for ops in [4, 8]:
+
+                        if op_m == 8 and a_lanes > 1:
+                            continue
 
                         if fits_in_gemm(a_lanes, b_lanes, qsize, op_m, ops, verbose=False):
-                            print(f"COND_LAUCNH_ONE_SKINNY_GEMM({a_lanes}, {b_lanes}, {qsize}, {op_m}, {ops})")
+                            print(f"    COND_LAUCNH_ONE_SKINNY_GEMM({a_lanes}, {b_lanes}, {qsize}, {op_m}, {ops})")
